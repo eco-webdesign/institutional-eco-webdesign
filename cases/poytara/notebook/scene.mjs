@@ -1,7 +1,6 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/+esm";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js/+esm";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js/+esm";
-import { DRACOLoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/DRACOLoader.js/+esm";
 import { EffectComposer } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js/+esm";
 import { RenderPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/RenderPass.js/+esm";
 import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js/+esm";
@@ -11,6 +10,7 @@ import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
   Poytara abertura — beats 0–3 (Tympanus macbook-only.glb).
   Case mode: SEM orbit / drag / hover. Scroll lock até fim do beat 3.
   Screen: CanvasTexture do HTML/CSS Figma (não vídeo); ClampToEdge (fix listras).
+  CSP no-blob: GLB sem Draco; texturas externas https (jsDelivr); sem DRACOLoader/workers.
   Créditos: MIT repalash + CC-BY timblewee — vendor/tympanus/ATTRIBUTION.md
 */
 
@@ -37,7 +37,7 @@ var captureHold = params.get("hold") === "1";
 var debugHud = params.get("debug") === "1";
 
 var slash = String.fromCharCode(47);
-var cdnTag = "v0.1.0";
+var cdnTag = "v0.1.3";
 var cdnBase =
   "https:" +
   slash +
@@ -601,24 +601,9 @@ async function init() {
     });
   }
 
-  var draco = new DRACOLoader();
-  var dracoPath =
-    "https:" +
-    slash +
-    slash +
-    "www.gstatic.com" +
-    slash +
-    "draco" +
-    slash +
-    "versioned" +
-    slash +
-    "decoders" +
-    slash +
-    "1.5.7" +
-    slash;
-  draco.setDecoderPath(dracoPath);
+  /* CSP App/Render: sem Draco/workers/blob. GLB v0.1.3 + texturas https no mesmo path.
+     ImageBitmapLoader/TextureLoader fazem fetch https (connect-src https:). Sem blob:. */
   var loader = new GLTFLoader();
-  loader.setDRACOLoader(draco);
 
   var gltf;
   try {

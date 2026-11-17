@@ -30,3 +30,8 @@ Esta prova **não** embute o runtime Threepipe. Porta o **asset GLB** do tutoria
 ## Risco Apple / publicação
 
 Silhueta MacBook = trademark / trade dress. Autorizado só como **base da prova** no Agent Store. Clearance antes de CDN / case Interago.
+
+## Eco packaging (v0.1.3+)
+
+- `macbook-only.glb` reexportado **sem** `KHR_draco_mesh_compression` (CSP App/Render sem `blob:` / workers).
+- Texturas do material em `macbook-tex-0.png` / `macbook-tex-1.png` (https no mesmo path jsDelivr; não embutidas como blob).
