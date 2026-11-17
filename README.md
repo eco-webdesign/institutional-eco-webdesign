@@ -25,3 +25,12 @@ Use sempre uma tag de release (`@vX.Y.Z`), não `@main`, para cache estável.
 - Demo Codrops / runtime base: **MIT** — Palash Bansal (repalash)
 
 Ver `cases/poytara/notebook/ATTRIBUTION.md` e `cases/poytara/notebook/LICENSE-MIT-repalash.txt`.
+
+
+## Interago module
+
+`cases/poytara/notebook/scene.mjs` — ES module for the Poytara notebook opening (Three.js). Loads GLB/poses from this same tag via jsDelivr. Include with:
+
+```
+<script type="module" src="https://cdn.jsdelivr.net/gh/eco-webdesign/institutional-eco-webdesign@v0.1.1/cases/poytara/notebook/scene.mjs"></script>
+```
