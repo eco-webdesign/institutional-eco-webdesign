@@ -11,12 +11,12 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
 import { RGBELoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/RGBELoader.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.3.2 — framing v030 + trackpad, no disk, particles, emissive, Cycles cam.
+  Poytara abertura estúdio v0.3.3 — lock framing; final light = close Space Black; floor 10–15%; mobile center.
   CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta.
 */
 
-var BUILD = "notebook-studio-v032-20261118130240";
-var CDN_TAG = "v0.3.2";
+var BUILD = "notebook-studio-v033-20261118131358";
+var CDN_TAG = "v0.3.3";
 
 var reduced =
   window.matchMedia &&
@@ -124,6 +124,7 @@ var state = {
   captureMode: captureMode,
   captureTime: 0,
   lockCamera: null,
+  finalCamLocked: false,
   loadProgress: 0,
   wireframe: true,
   studio: "dark-dramatic",
@@ -649,7 +650,7 @@ function makeStudioFloor() {
       map: glowTex,
       color: 0x9aa8b8,
       transparent: true,
-      opacity: 0.09,
+      opacity: 0.13,
       depthWrite: false,
       blending: THREE.NormalBlending,
       toneMapped: false,
@@ -692,17 +693,10 @@ function makeParticles(count) {
   var pos = new Float32Array(count * 3);
   var i;
   for (i = 0; i < count; i++) {
-    /* ~90% in screen beam over keys; rare soft strays almost invisible */
-    var inCone = Math.random() < 0.9;
-    if (inCone) {
-      pos[i * 3] = (Math.random() - 0.2) * 1.55;
-      pos[i * 3 + 1] = Math.random() * 1.15 + 0.18;
-      pos[i * 3 + 2] = (Math.random() - 0.1) * 1.35 + 0.35;
-    } else {
-      pos[i * 3] = (Math.random() - 0.35) * 3.2;
-      pos[i * 3 + 1] = Math.random() * 2.2 + 0.05;
-      pos[i * 3 + 2] = (Math.random() - 0.4) * 2.8;
-    }
+    /* Beam only — over keyboard / screen light cone, no scattered field */
+    pos[i * 3] = (Math.random() - 0.18) * 1.2;
+    pos[i * 3 + 1] = Math.random() * 0.95 + 0.22;
+    pos[i * 3 + 2] = (Math.random() - 0.08) * 1.05 + 0.4;
   }
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   var mat = new THREE.PointsMaterial({
@@ -854,12 +848,12 @@ function upgradeChassisMaterials(root, figmaTex) {
         roughnessMap: roughMap,
         metalnessMap: null,
         aoMap: m.aoMap || null,
-        metalness: 0.78,
-        roughness: isBase ? 0.62 : 0.52,
-        clearcoat: 0.0,
-        clearcoatRoughness: 1.0,
-        envMapIntensity: 0.06,
-        reflectivity: 0.18,
+        metalness: 0.8,
+        roughness: isBase ? 0.58 : 0.5,
+        clearcoat: 0.1,
+        clearcoatRoughness: 0.68,
+        envMapIntensity: 0.16,
+        reflectivity: 0.32,
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
       });
@@ -1241,6 +1235,11 @@ async function init() {
   rimLid.position.set(0.5, 5.5, -3.8);
   scene.add(rimLid);
 
+  /* Thin rim on base front lip + side — keeps chassis readable in final (same as close) */
+  var rimFront = new THREE.DirectionalLight(0xd4e0f2, isMobile ? 2.2 : 1.85);
+  rimFront.position.set(2.4, 0.55, 7.2);
+  scene.add(rimFront);
+
   var fill = new THREE.DirectionalLight(0x2a3340, 0.04);
   fill.position.set(-3.2, 2.2, 4.2);
   scene.add(fill);
@@ -1255,7 +1254,7 @@ async function init() {
   var studio = makeStudioFloor();
   scene.add(studio.group);
 
-  var particleCount = reduced ? 0 : isMobile ? 64 : state.gpuOffLikely ? 96 : 168;
+  var particleCount = reduced ? 0 : isMobile ? 48 : state.gpuOffLikely ? 72 : 120;
   var dust = particleCount > 0 ? makeParticles(particleCount) : null;
   if (dust) {
     scene.add(dust);
@@ -1316,7 +1315,7 @@ async function init() {
       hdrTex.mapping = THREE.EquirectangularReflectionMapping;
       var envRT = pmrem.fromEquirectangular(hdrTex);
       scene.environment = envRT.texture;
-      scene.environmentIntensity = isMobile ? 0.14 : 0.1;
+      scene.environmentIntensity = isMobile ? 0.2 : 0.16;
       scene.background = new THREE.Color(0x000000);
       hdrTex.dispose();
       pmrem.dispose();
@@ -1508,16 +1507,18 @@ async function init() {
       with a tiny pull so front/trackpad lands ~88–90%.
       Mobile: keep upper/mid + copy below.
     */
-    var fillH = isMobile ? 0.26 : 0.46;
+    /* Desktop framing LOCKED (v0.3.2/v030): do not drift */
+    var fillH = isMobile ? 0.30 : 0.46;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? -0.62 : 0.22;
+    var ndcY = isMobile ? -0.28 : 0.22;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
-      camFaceTarget.copy(center).addScaledVector(screenUp, vertShift);
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.08);
-      camFace.addScaledVector(screenUp, faceDist * 0.06);
+      /* Notebook centered in band above copy */
+      camFaceTarget.copy(center).addScaledVector(screenUp, vertShift * 0.85);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.05);
+      camFace.addScaledVector(screenUp, faceDist * 0.08);
     } else {
       var leftEdge = new THREE.Vector3()
         .copy(center)
@@ -1531,6 +1532,16 @@ async function init() {
       camFace.addScaledVector(screenUp, faceDist * 0.015);
       camFace.addScaledVector(screenRight, -screenWorldW * 0.22);
       camFaceTarget.addScaledVector(screenRight, -screenWorldW * 0.08);
+      if (!state.finalCamLocked) {
+        state._frozenFace = camFace.clone();
+        state._frozenFaceTarget = camFaceTarget.clone();
+        state._frozenFaceDist = faceDist;
+        state.finalCamLocked = true;
+      } else if (state._frozenFace) {
+        camFace.copy(state._frozenFace);
+        camFaceTarget.copy(state._frozenFaceTarget);
+        faceDist = state._frozenFaceDist;
+      }
     }
 
     /* Flash still: mid lid+screen (same distance class as face, not camNear) */
@@ -1563,7 +1574,7 @@ async function init() {
       }
       if (studio.softRefl && studio.softRefl.material) {
         studio.softRefl.visible = true;
-        studio.softRefl.material.opacity = 0.08 + 0.06 * a;
+        studio.softRefl.material.opacity = 0.12 + 0.03 * a;
       }
     }
     if (screenOverlay && screenOverlay.material) {
@@ -1710,7 +1721,7 @@ async function init() {
     /* Desktop: left black. Mobile: below notebook with clear gap. */
     if (isMobile) {
       beatCopy.style.top = "auto";
-      beatCopy.style.bottom = "1%";
+      beatCopy.style.bottom = "4%";
       beatCopy.style.left = "8%";
       beatCopy.style.right = "8%";
       beatCopy.style.maxWidth = "84%";
@@ -1954,27 +1965,27 @@ async function init() {
         var sn = new THREE.Vector3(0, 1, 0);
         sn.transformDirection(screenOverlay.matrixWorld).normalize();
         if (sn.dot(camera.position.clone().sub(sp)) < 0) sn.negate();
-        /* Aim bounce at chin / upper keys only — never the front lip / trackpad */
-        screenBounce.position.copy(sp).addScaledVector(sn, 0.05);
-        /* Target near hinge/upper keys — falloff kills palmrest wash */
-        screenBounce.target.position.copy(sp).addScaledVector(sn, -0.14);
-        screenBounce.target.position.y = Math.max(0.35, Math.min(0.7, screenBounce.target.position.y));
+        /* Bounce from screen onto keys: hot near hinge, decay toward front/trackpad */
+        screenBounce.position.copy(sp).addScaledVector(sn, 0.04);
+        screenBounce.target.position.copy(sp).addScaledVector(sn, -0.22);
+        screenBounce.target.position.y = Math.max(0.28, Math.min(0.62, screenBounce.target.position.y));
         screenBounce.target.updateMatrixWorld();
+        screenBounce.penumbra = 0.82;
         if (bloomFlash > 0.45) {
           screenBounce.intensity = 0;
           screenBounce.distance = 1.0;
           screenBounce.angle = Math.PI / 30;
           screenBounce.decay = 3.0;
         } else if (bloomFlash > 0.08) {
-          screenBounce.intensity = 0.35 * bloomFlash;
-          screenBounce.distance = 1.35;
-          screenBounce.angle = Math.PI / 24;
-          screenBounce.decay = 2.7;
+          screenBounce.intensity = 0.4 * bloomFlash;
+          screenBounce.distance = 1.45;
+          screenBounce.angle = Math.PI / 22;
+          screenBounce.decay = 2.6;
         } else {
-          screenBounce.intensity = (isMobile ? 1.85 : 1.55) * timeline.figmaP;
-          screenBounce.distance = 2.2;
-          screenBounce.angle = Math.PI / 15;
-          screenBounce.decay = 2.35;
+          screenBounce.intensity = (isMobile ? 2.55 : 2.35) * timeline.figmaP;
+          screenBounce.distance = 2.85;
+          screenBounce.angle = Math.PI / 11;
+          screenBounce.decay = 1.85;
         }
       }
     } else {
@@ -2004,14 +2015,17 @@ async function init() {
     }
     if (studio.softRefl && studio.softRefl.material) {
       studio.softRefl.visible = true;
-      studio.softRefl.material.opacity = bloomFlash > 0.15 ? 0.04 : 0.09 + 0.04 * timeline.figmaP;
+      studio.softRefl.material.opacity = bloomFlash > 0.15 ? 0.06 : 0.13 + 0.02 * timeline.figmaP;
     }
     /* Stable key/fill — same aluminum in flash and idle (no silver wash) */
-    key.intensity = isMobile ? 0.1 : 0.07;
-    fill.intensity = isMobile ? 0.04 : 0.025;
-    rimLid.intensity = bloomFlash > 0.08 ? (isMobile ? 2.4 : 2.0) : (isMobile ? 2.1 : 1.7);
-    rim.intensity = bloomFlash > 0.08 ? (isMobile ? 3.4 : 2.9) : (isMobile ? 3.1 : 2.55);
-    rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 2.4 : 2.0) : (isMobile ? 2.2 : 1.75);
+    key.intensity = isMobile ? 0.18 : 0.14;
+    fill.intensity = isMobile ? 0.07 : 0.05;
+    rimLid.intensity = bloomFlash > 0.08 ? (isMobile ? 2.8 : 2.4) : (isMobile ? 2.5 : 2.15);
+    rim.intensity = bloomFlash > 0.08 ? (isMobile ? 4.0 : 3.5) : (isMobile ? 3.7 : 3.2);
+    rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 2.9 : 2.5) : (isMobile ? 2.6 : 2.2);
+    if (typeof rimFront !== "undefined" && rimFront) {
+      rimFront.intensity = bloomFlash > 0.08 ? (isMobile ? 2.0 : 1.7) : (isMobile ? 2.15 : 1.9);
+    }
 
     /* Camera: enter dolly → hold → face+zoom frontal (never scale model) */
     if (t < T_ENTER1) {
@@ -2106,7 +2120,7 @@ async function init() {
     camera.lookAt(camFaceTarget);
     applyFinalStudioLook(1);
     bloomFlash = 0;
-    screenBounce.intensity = isMobile ? 1.9 : 1.6;
+    screenBounce.intensity = isMobile ? 2.5 : 2.3;
     if (studio.glow && studio.glow.material) {
       studio.glow.visible = true;
       studio.glow.material.opacity = 0.12;
