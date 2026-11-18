@@ -10,12 +10,12 @@ import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.2.4 — flash só na tela; rim/tampa legível.
+  Poytara abertura estúdio v0.2.5 — void preto; Space Black; flash localizado.
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v024-20261117233210";
-var CDN_TAG = "v0.2.4";
+var BUILD = "notebook-studio-v025-20261117234232";
+var CDN_TAG = "v0.2.5";
 
 var reduced =
   window.matchMedia &&
@@ -563,10 +563,10 @@ function bindScreenTexture(root, figma) {
     var mats = Array.isArray(o.material) ? o.material : [o.material];
     mats.forEach(function (m) {
       if (!m) return;
-      if (m.color) m.color.set(0x050506);
+      if (m.color) m.color.set(0x0a0a0b);
       if (m.emissive) {
-        m.emissive.set(0x0a0c10);
-        m.emissiveIntensity = 0.12;
+        m.emissive.set(0x000000);
+        m.emissiveIntensity = 0;
       }
       if (m.metalness !== undefined) m.metalness = 0.9;
       if (m.roughness !== undefined) m.roughness = 0.35;
@@ -582,11 +582,11 @@ function bindScreenTexture(root, figma) {
   var chin = new THREE.Mesh(
     new THREE.BoxGeometry(pw * 1.04, 0.012, ph * 0.14),
     new THREE.MeshStandardMaterial({
-      color: 0x1a1e28,
+      color: 0x141416,
       metalness: 0.9,
-      roughness: 0.32,
-      emissive: new THREE.Color(0x2a3344),
-      emissiveIntensity: 0.45,
+      roughness: 0.4,
+      emissive: new THREE.Color(0x000000),
+      emissiveIntensity: 0,
     })
   );
   chin.name = "screenChin";
@@ -596,11 +596,11 @@ function bindScreenTexture(root, figma) {
 
   /* Side rails of the lid so moldura reads against void */
   var railMat = new THREE.MeshStandardMaterial({
-    color: 0x2a303c,
-    metalness: 0.95,
-    roughness: 0.28,
-    emissive: new THREE.Color(0x3a4558),
-    emissiveIntensity: 0.55,
+    color: 0x2a2a2c,
+    metalness: 0.92,
+    roughness: 0.34,
+    emissive: new THREE.Color(0x000000),
+    emissiveIntensity: 0,
   });
   var railL = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.02, 0.01, ph * 1.02), railMat);
   railL.name = "screenRailL";
@@ -621,23 +621,21 @@ function bindScreenTexture(root, figma) {
 }
 
 function makeStudioFloor() {
-  /* Infinite-feel floor: huge plane + radial glow (no hard circle rim) */
+  /* Deep black void: no gray horizon. Only a soft radial reflection under the notebook. */
   var group = new THREE.Group();
   group.name = "studioFloor";
 
   var ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(80, 80),
-    new THREE.MeshPhysicalMaterial({
-      color: 0x050608,
-      roughness: 0.22,
-      metalness: 0.78,
-      clearcoat: 0.35,
-      clearcoatRoughness: 0.4,
-      envMapIntensity: 0.4,
+    new THREE.PlaneGeometry(40, 40),
+    new THREE.MeshStandardMaterial({
+      color: 0x000000,
+      roughness: 1,
+      metalness: 0,
+      envMapIntensity: 0,
     })
   );
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.012;
+  ground.position.y = -0.014;
   ground.receiveShadow = true;
   group.add(ground);
 
@@ -645,9 +643,10 @@ function makeStudioFloor() {
   gc.width = 256;
   gc.height = 256;
   var gctx = gc.getContext("2d");
-  var grd = gctx.createRadialGradient(128, 128, 8, 128, 128, 128);
-  grd.addColorStop(0, "rgba(90,105,150,0.10)");
-  grd.addColorStop(0.35, "rgba(40,50,90,0.03)");
+  var grd = gctx.createRadialGradient(128, 128, 4, 128, 128, 128);
+  grd.addColorStop(0, "rgba(210,220,235,0.22)");
+  grd.addColorStop(0.25, "rgba(140,155,175,0.08)");
+  grd.addColorStop(0.55, "rgba(40,45,55,0.02)");
   grd.addColorStop(1, "rgba(0,0,0,0)");
   gctx.fillStyle = grd;
   gctx.fillRect(0, 0, 256, 256);
@@ -655,11 +654,11 @@ function makeStudioFloor() {
   glowTex.needsUpdate = true;
 
   var glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.2, 3.2),
+    new THREE.PlaneGeometry(2.6, 2.6),
     new THREE.MeshBasicMaterial({
       map: glowTex,
       transparent: true,
-      opacity: 0.035,
+      opacity: 0.22,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       toneMapped: false,
@@ -671,21 +670,21 @@ function makeStudioFloor() {
   group.add(glow);
 
   var contact = new THREE.Mesh(
-    new THREE.CircleGeometry(2.8, 48),
-    new THREE.ShadowMaterial({ opacity: 0.5 })
+    new THREE.CircleGeometry(1.6, 48),
+    new THREE.ShadowMaterial({ opacity: 0.72 })
   );
   contact.rotation.x = -Math.PI / 2;
   contact.position.y = 0.0025;
   contact.receiveShadow = true;
   group.add(contact);
 
-  /* Soft grid fade — no hard outer ring */
+  /* Dissolve-only grid; never in final */
   var floorWire = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.PlaneGeometry(6, 6, 8, 8)),
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(5, 5, 6, 6)),
     new THREE.LineBasicMaterial({
-      color: 0xa8c0ff,
+      color: 0x8899bb,
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.12,
       depthWrite: false,
     })
   );
@@ -767,26 +766,33 @@ function upgradeChassisMaterials(root, figmaTex) {
         return m;
       }
       var n = (o.name || "").toLowerCase();
-      var isKey = n.indexOf("key") >= 0 || n.indexOf("deck") >= 0;
-      var baseCol = m.color ? m.color.clone() : new THREE.Color(0x3a3e48);
-      if (!isKey) {
-        /* Lift lid/chassis above pure void so moldura reads */
-        baseCol.lerp(new THREE.Color(0x5a616c), 0.45);
+      var isKey =
+        n.indexOf("key") >= 0 ||
+        n.indexOf("deck") >= 0 ||
+        n.indexOf("keyboard") >= 0;
+      var baseCol;
+      if (isKey) {
+        /* Matte black keys — no white edge, no plastic blue */
+        baseCol = new THREE.Color(0x0a0a0b);
+      } else {
+        /* Space Black / Space Gray aluminum */
+        baseCol = new THREE.Color(0x1c1c1e);
+        if (m.color) baseCol.lerp(m.color, 0.15);
       }
       var phys = new THREE.MeshPhysicalMaterial({
         color: baseCol,
-        map: m.map || null,
-        normalMap: m.normalMap || null,
-        roughnessMap: m.roughnessMap || null,
-        metalnessMap: m.metalnessMap || null,
-        metalness: isKey ? 0.2 : 0.92,
-        roughness: isKey ? 0.65 : 0.26,
-        clearcoat: isKey ? 0.1 : 0.78,
-        clearcoatRoughness: isKey ? 0.5 : 0.18,
-        envMapIntensity: isKey ? 0.55 : 1.6,
-        reflectivity: 0.82,
-        emissive: isKey ? new THREE.Color(0x000000) : new THREE.Color(0x243044),
-        emissiveIntensity: isKey ? 0 : 0.38,
+        map: isKey ? null : m.map || null,
+        normalMap: isKey ? null : m.normalMap || null,
+        roughnessMap: isKey ? null : m.roughnessMap || null,
+        metalnessMap: isKey ? null : m.metalnessMap || null,
+        metalness: isKey ? 0.08 : 0.88,
+        roughness: isKey ? 0.82 : 0.38,
+        clearcoat: isKey ? 0.02 : 0.45,
+        clearcoatRoughness: isKey ? 0.7 : 0.32,
+        envMapIntensity: isKey ? 0.12 : 0.55,
+        reflectivity: isKey ? 0.15 : 0.55,
+        emissive: new THREE.Color(0x000000),
+        emissiveIntensity: 0,
       });
       if (m.map) {
         phys.map.colorSpace = THREE.SRGBColorSpace;
@@ -821,7 +827,7 @@ function makeVignetteGrainShader() {
       "void main() {",
       "  vec4 c = texture2D(tDiffuse, vUv);",
       "  float d = distance(vUv, vec2(0.5));",
-      "  float vig = smoothstep(1.05, 0.28, d * (0.55 + vignette));",
+      "  float vig = smoothstep(1.12, 0.22, d * (0.5 + vignette));",
       "  c.rgb *= vig;",
       "  float n = fract(sin(dot(vUv * (time + 12.7), vec2(12.9898, 78.233))) * 43758.5453);",
       "  c.rgb += (n - 0.5) * grain;",
@@ -924,10 +930,17 @@ function setEdgeWireOpacity(edgeGroup, amount) {
   var lines = (edgeGroup && edgeGroup.userData && edgeGroup.userData._lines) || [];
   lines.forEach(function (line) {
     if (line.material) {
-      line.material.opacity = 0.15 + 0.85 * a;
-      line.visible = a > 0.04;
+      /* After dissolve: opacity 0 + hidden — no white key outlines in final */
+      if (a <= 0.02) {
+        line.material.opacity = 0;
+        line.visible = false;
+      } else {
+        line.material.opacity = 0.1 + 0.85 * a;
+        line.visible = true;
+      }
     }
   });
+  if (edgeGroup) edgeGroup.visible = a > 0.02;
 }
 
 function setWireframeMix(entries, wireAmount) {
@@ -1052,14 +1065,14 @@ async function init() {
   state.webglOk = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = isMobile ? 1.48 : 1.36;
+  renderer.toneMappingExposure = isMobile ? 1.12 : 1.08;
   renderer.shadowMap.enabled = !state.gpuOffLikely;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setClearColor(0x000000, 1);
 
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.016);
+  scene.fog = new THREE.FogExp2(0x000000, 0.028);
 
   /* ~50–85mm feel */
   var camera = new THREE.PerspectiveCamera(26, 1, 0.05, 200);
@@ -1070,16 +1083,16 @@ async function init() {
     pmrem.compileEquirectangularShader();
     var envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = envTex;
-    scene.environmentIntensity = 0.42;
+    scene.environmentIntensity = 0.22;
     pmrem.dispose();
   } catch (err) {
     setStatus("env-map skipped");
   }
 
-  var hemi = new THREE.HemisphereLight(0x8a9ab8, 0x050608, isMobile ? 0.32 : 0.24);
+  var hemi = new THREE.HemisphereLight(0x3a4050, 0x000000, 0.08);
   scene.add(hemi);
 
-  var key = new THREE.DirectionalLight(0xfff1e0, 0.55);
+  var key = new THREE.DirectionalLight(0xf0ece4, 0.22);
   key.position.set(4.2, 7.5, 3.2);
   key.castShadow = !state.gpuOffLikely;
   if (key.castShadow) {
@@ -1096,24 +1109,24 @@ async function init() {
   }
   scene.add(key);
 
-  var rim = new THREE.DirectionalLight(0xd0e4ff, 5.2);
+  var rim = new THREE.DirectionalLight(0xd8e4f5, 2.8);
   rim.position.set(-6.2, 4.6, -6.2);
   scene.add(rim);
 
-  var rimHinge = new THREE.DirectionalLight(0xb8d4ff, 3.8);
+  var rimHinge = new THREE.DirectionalLight(0xc8d6ea, 1.8);
   rimHinge.position.set(4.2, 1.4, -5.2);
   scene.add(rimHinge);
 
-  var rimLid = new THREE.DirectionalLight(0xe8f2ff, 3.2);
+  var rimLid = new THREE.DirectionalLight(0xe4ecf8, 1.6);
   rimLid.position.set(0.5, 5.5, -3.8);
   scene.add(rimLid);
 
-  var fill = new THREE.DirectionalLight(0x4a5878, 0.18);
+  var fill = new THREE.DirectionalLight(0x2a3038, 0.04);
   fill.position.set(-2.5, 1.8, 5.5);
   scene.add(fill);
 
   /* Screen bounce onto keyboard (fake RectArea — CSP-safe) */
-  var screenBounce = new THREE.SpotLight(0xe8f0ff, 0, 4.2, Math.PI / 11, 0.55, 1.9);
+  var screenBounce = new THREE.SpotLight(0xe8f0ff, 0, 3.2, Math.PI / 14, 0.65, 2.1);
   screenBounce.position.set(0, 1.6, 1.1);
   screenBounce.target.position.set(0, 0.08, 0.35);
   scene.add(screenBounce);
@@ -1333,66 +1346,62 @@ async function init() {
 
     var vFov = THREE.MathUtils.degToRad(camera.fov);
     /*
-      Desktop: screen ~52% tall → moldura ~8%, base tela ~80%, trackpad ~88–90%.
-      Mobile: smaller/higher notebook (upper/mid), full-ish screen, room for copy below.
+      Desktop vertical (v0.2.4): trackpad ~88–90%.
+      Desktop horizontal (v0.2.3): left display edge ~50%, right side cropped out.
+      Mobile: notebook above, info below.
     */
-    var fillH = isMobile ? 0.24 : 0.48;
+    var fillH = isMobile ? 0.26 : 0.48;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? 0.52 : 0.22;
+    var ndcY = isMobile ? 0.50 : 0.22;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
       camFaceTarget.copy(center).addScaledVector(screenUp, -vertShift * 0.08);
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.12);
-      camFace.addScaledVector(screenUp, faceDist * 0.12);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.1);
+      camFace.addScaledVector(screenUp, faceDist * 0.1);
     } else {
-      /* Left edge of display ~50%; crop right; keep base/trackpad in frame */
       var leftEdge = new THREE.Vector3()
         .copy(center)
         .addScaledVector(screenRight, -screenWorldW * 0.5);
       camFaceTarget
         .copy(leftEdge)
-        .addScaledVector(screenRight, screenWorldW * 0.04)
+        .addScaledVector(screenRight, screenWorldW * 0.02)
         .addScaledVector(screenUp, -vertShift);
       camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
       camFace.addScaledVector(screenUp, faceDist * 0.02);
+      /* Shift cam left so right of notebook exits frame (v0.2.3 crop) */
+      camFace.addScaledVector(screenRight, -screenWorldW * 0.22);
+      camFaceTarget.addScaledVector(screenRight, -screenWorldW * 0.08);
     }
   }
 
   function applyFinalStudioLook(amount) {
     var a = clamp01(amount);
-    renderer.setClearColor(new THREE.Color().setRGB(0.027 * (1 - a), 0.035 * (1 - a), 0.055 * (1 - a)), 1);
-    scene.background = new THREE.Color().setRGB(0.027 * (1 - a), 0.035 * (1 - a), 0.055 * (1 - a));
-    if (a > 0.5) {
-      scene.background = new THREE.Color(0x000000);
-      renderer.setClearColor(0x000000, 1);
-      /* Weak fog — strong fog ate the lid silhouette */
-      scene.fog = new THREE.FogExp2(0x000000, 0.012 + 0.008 * a);
-    }
+    /* Always deep black — never a gray horizon band */
+    scene.background = new THREE.Color(0x000000);
+    renderer.setClearColor(0x000000, 1);
+    scene.fog = new THREE.FogExp2(0x000000, 0.022 + 0.012 * a);
     if (studio.group) {
-      studio.group.traverse(function (o) {
-        if (o.name === "floorWire") {
-          o.visible = a < 0.25;
+      if (studio.floorWire) studio.floorWire.visible = false;
+      if (studio.ground) {
+        studio.ground.visible = true;
+        if (studio.ground.material) {
+          studio.ground.material.color.set(0x000000);
+          studio.ground.material.metalness = 0;
+          studio.ground.material.roughness = 1;
+          studio.ground.material.envMapIntensity = 0;
         }
-        if (o === studio.glow && o.material) {
-          /* Floor glow stays tiny in final; never a light pool */
-          o.material.opacity = 0.04 * (1 - a * 0.5);
-          o.visible = a < 0.95;
-        }
-        if (o.isMesh && o.material && o.material.color && o !== studio.contact && o !== studio.glow) {
-          if (!o.userData._baseColor) {
-            o.userData._baseColor = o.material.color.clone();
-          }
-          /* Only crush the ground plane toward void */
-          if (o === studio.ground) {
-            o.material.color.copy(o.userData._baseColor).lerp(new THREE.Color(0x000000), a * 0.97);
-          }
-        }
-        if (o === studio.contact && o.material) {
-          o.material.opacity = 0.35 + 0.15 * a;
-        }
-      });
+      }
+      if (studio.glow && studio.glow.material) {
+        /* Soft radial under notebook only */
+        studio.glow.visible = true;
+        studio.glow.material.opacity = 0.18 + 0.08 * a;
+      }
+      if (studio.contact && studio.contact.material) {
+        studio.contact.visible = true;
+        studio.contact.material.opacity = 0.75;
+      }
     }
     if (screenOverlay && screenOverlay.material) {
       screenOverlay.material.opacity = Math.max(screenOverlay.material.opacity, 0.001);
@@ -1466,19 +1475,17 @@ async function init() {
       if (useBloom) {
         bloomPass = new UnrealBloomPass(
           new THREE.Vector2(window.innerWidth, window.innerHeight),
-          isMobile || state.gpuOffLikely ? 0.18 : 0.28,
-          0.55,
-          0.82
+          isMobile || state.gpuOffLikely ? 0.1 : 0.14,
+          0.28,
+          0.88
         );
         composer.addPass(bloomPass);
         state.bloomOk = true;
       }
-      if (!isMobile && !state.gpuOffLikely) {
-        vigPass = new ShaderPass(makeVignetteGrainShader());
-        vigPass.uniforms.vignette.value = 0.9;
-        vigPass.uniforms.grain.value = 0.028;
-        composer.addPass(vigPass);
-      }
+      vigPass = new ShaderPass(makeVignetteGrainShader());
+      vigPass.uniforms.vignette.value = isMobile || state.gpuOffLikely ? 1.25 : 1.15;
+      vigPass.uniforms.grain.value = 0.02;
+      composer.addPass(vigPass);
       composer.addPass(new OutputPass());
       state.postOk = true;
     } catch (err) {
@@ -1578,13 +1585,23 @@ async function init() {
 
   function renderFrame() {
     if (bloomPass) {
-      var baseBloom = isMobile || state.gpuOffLikely ? 0.28 : 0.34;
-      bloomPass.strength = baseBloom + bloomFlash * 3.2;
-      /* Floor is muted during flash; threshold lets screen white plane bloom */
-      bloomPass.threshold = bloomFlash > 0.08 ? 0.35 : 0.78;
+      /* Idle: low bloom, vivid UI. Flash: capped local bloom (screen + short halo). */
+      var baseBloom = isMobile || state.gpuOffLikely ? 0.1 : 0.12;
+      if (bloomFlash > 0.08) {
+        bloomPass.strength = Math.min(1.55, baseBloom + bloomFlash * 1.35);
+        bloomPass.radius = 0.22;
+        bloomPass.threshold = 0.55;
+      } else {
+        bloomPass.strength = baseBloom;
+        bloomPass.radius = 0.28;
+        bloomPass.threshold = 0.9;
+      }
     }
-    if (vigPass && vigPass.uniforms && vigPass.uniforms.time) {
-      vigPass.uniforms.time.value = performance.now() * 0.001;
+    if (vigPass && vigPass.uniforms) {
+      if (vigPass.uniforms.time) vigPass.uniforms.time.value = performance.now() * 0.001;
+      if (vigPass.uniforms.vignette) {
+        vigPass.uniforms.vignette.value = bloomFlash > 0.08 ? 1.45 : (isMobile || state.gpuOffLikely ? 1.25 : 1.15);
+      }
     }
     if (composer && state.postOk) {
       try {
@@ -1696,9 +1713,13 @@ async function init() {
     var wireAmt = 1 - easeOutExpo(dissolveT);
     setWireframeMix(matEntries, wireAmt);
     setEdgeWireOpacity(edgeWires, wireAmt);
+    if (wireAmt <= 0.02 && edgeWires) {
+      edgeWires.visible = false;
+      setEdgeWireOpacity(edgeWires, 0);
+    }
     if (studio.floorWire) {
-      studio.floorWire.material.opacity = Math.max(0, 0.28 * wireAmt);
-      studio.floorWire.visible = wireAmt > 0.05;
+      studio.floorWire.material.opacity = Math.max(0, 0.2 * wireAmt);
+      studio.floorWire.visible = wireAmt > 0.08;
     }
     if (placeholder) {
       placeholder.visible = wireAmt > 0.55 && t < T_DIS1;
@@ -1738,28 +1759,33 @@ async function init() {
       if (screenOverlay) {
         screenOverlay.material.opacity = Math.max(timeline.figmaP, bloomFlash * 0.98, 0.001);
       }
-      /* White flash plane ON the panel — bloom source is the screen, not the floor */
+      /* Localized flash: bright panel + short keyboard halo only */
       if (screenFlashPlane && screenFlashPlane.material) {
-        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(1, bloomFlash * 1.35) : 0;
+        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(0.85, bloomFlash * 0.95) : 0;
         screenFlashPlane.visible = bloomFlash > 0.02;
+        screenFlashPlane.scale.set(0.88, 0.88, 0.88);
       }
-      /* During flash: NO bounce light (it was specular-blooming the floor).
-         After flash: soft keyboard kiss only. */
-      if (bloomFlash > 0.05) {
-        screenBounce.intensity = 0;
-      } else if (screenOverlay) {
+      if (screenOverlay) {
         var sp = new THREE.Vector3();
         screenOverlay.getWorldPosition(sp);
         var sn = new THREE.Vector3(0, 1, 0);
         sn.transformDirection(screenOverlay.matrixWorld).normalize();
         if (sn.dot(camera.position.clone().sub(sp)) < 0) sn.negate();
-        screenBounce.position.copy(sp).addScaledVector(sn, 0.06);
-        screenBounce.target.position.set(sp.x * 0.05, 0.2, sp.z * 0.15);
+        screenBounce.position.copy(sp).addScaledVector(sn, 0.05);
+        screenBounce.target.position.set(sp.x * 0.04, 0.18, sp.z * 0.12);
         screenBounce.target.updateMatrixWorld();
-        screenBounce.intensity = 2.6 * timeline.figmaP;
-        screenBounce.distance = 4.0;
-        screenBounce.angle = Math.PI / 12;
-        screenBounce.decay = 1.9;
+        if (bloomFlash > 0.08) {
+          /* Short halo on keyboard deck — not a floor pool */
+          screenBounce.intensity = 1.8 * bloomFlash;
+          screenBounce.distance = 1.8;
+          screenBounce.angle = Math.PI / 18;
+          screenBounce.decay = 2.6;
+        } else {
+          screenBounce.intensity = 1.6 * timeline.figmaP;
+          screenBounce.distance = 3.0;
+          screenBounce.angle = Math.PI / 14;
+          screenBounce.decay = 2.0;
+        }
       }
     } else {
       figma.paintFrame(0);
@@ -1771,35 +1797,30 @@ async function init() {
       }
       screenBounce.intensity = 0;
     }
-    /* Mute floor entirely during flash — no specular ellipse, no glow cone */
-    if (studio.glow) {
-      studio.glow.visible = false;
-      studio.glow.material.opacity = 0;
-    }
-    if (studio.contact) {
-      studio.contact.visible = bloomFlash <= 0.04;
-      if (studio.contact.material) studio.contact.material.opacity = 0.38;
-    }
+    /* Keep void black; only a whisper of under-notebook glow outside flash */
+    if (studio.floorWire) studio.floorWire.visible = false;
     if (studio.ground) {
-      if (bloomFlash > 0.04) {
-        studio.ground.visible = false;
+      studio.ground.visible = true;
+      if (studio.ground.material) studio.ground.material.color.set(0x000000);
+    }
+    if (studio.glow && studio.glow.material) {
+      if (bloomFlash > 0.08) {
+        studio.glow.visible = false;
+        studio.glow.material.opacity = 0;
       } else {
-        studio.ground.visible = true;
-        if (studio.glow) {
-          studio.glow.visible = true;
-          studio.glow.material.opacity = 0.025 + 0.015 * timeline.figmaP;
-        }
+        studio.glow.visible = true;
+        studio.glow.material.opacity = 0.16 + 0.06 * timeline.figmaP;
       }
     }
-    if (studio.floorWire) {
-      if (bloomFlash > 0.04) studio.floorWire.visible = false;
+    if (studio.contact) {
+      studio.contact.visible = bloomFlash <= 0.08;
+      if (studio.contact.material) studio.contact.material.opacity = 0.75;
     }
-    /* Dim key fill during flash so left floor cone dies; punch rim on lid */
-    key.intensity = bloomFlash > 0.05 ? 0.12 : 0.55;
-    fill.intensity = bloomFlash > 0.05 ? 0.04 : 0.18;
-    rimLid.intensity = bloomFlash > 0.05 ? 6.2 : 3.2;
-    rim.intensity = bloomFlash > 0.05 ? 7.0 : 5.2;
-    rimHinge.intensity = bloomFlash > 0.05 ? 5.0 : 3.8;
+    key.intensity = bloomFlash > 0.08 ? 0.06 : 0.22;
+    fill.intensity = 0.04;
+    rimLid.intensity = bloomFlash > 0.08 ? 2.4 : 1.6;
+    rim.intensity = bloomFlash > 0.08 ? 3.4 : 2.8;
+    rimHinge.intensity = bloomFlash > 0.08 ? 2.2 : 1.8;
     /* ~0.45–0.55s decay at 60fps */
     bloomFlash *= 0.88;
 
@@ -1896,7 +1917,7 @@ async function init() {
     camera.lookAt(camFaceTarget);
     applyFinalStudioLook(1);
     bloomFlash *= 0.9;
-    screenBounce.intensity = isMobile ? 4.2 : 3.6;
+    screenBounce.intensity = isMobile ? 1.8 : 1.6;
     if (studio.glow) {
       studio.glow.visible = false;
       studio.glow.material.opacity = 0;
@@ -1996,7 +2017,7 @@ async function init() {
   });
   window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · studio v0.2.4 · stripeFix=" +
+    "ready · studio v0.2.5 · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
       (state.dofOk ? " · dof" : " · no-dof") +
