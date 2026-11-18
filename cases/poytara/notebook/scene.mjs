@@ -15,7 +15,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v022-20261117223347";
+var BUILD = "notebook-studio-v022-20261117224041";
 var CDN_TAG = "v0.2.2";
 
 var reduced =
@@ -41,6 +41,7 @@ var copyPos = params.get("pos") === "B" ? "B" : "A";
 var forceBeat = params.get("beat");
 var captureHold = params.get("hold") === "1";
 var debugHud = params.get("debug") === "1";
+var captureMode = params.get("capture") === "1";
 
 var slash = String.fromCharCode(47);
 var scriptEl =
@@ -113,6 +114,8 @@ var state = {
   glbPath: glbUrl,
   posesPath: posesUrl,
   debugHud: debugHud,
+  captureMode: captureMode,
+  captureTime: 0,
   loadProgress: 0,
   wireframe: true,
   studio: "dark-dramatic",
@@ -1643,7 +1646,10 @@ async function init() {
     }
     var forced =
       forceBeat !== null && forceBeat !== undefined && forceBeat !== "";
-    if (!forced && !timeline.done) {
+    if (!forced && captureMode) {
+      /* Deterministic harness: wall-clock screenshot stalls must not skip beats */
+      applyTimeline(state.captureTime);
+    } else if (!forced && !timeline.done) {
       applyTimeline(now - timeline.start);
     } else if (!forced && timeline.done) {
       idleDrift(now);
@@ -1652,6 +1658,24 @@ async function init() {
     renderFrame();
     requestAnimationFrame(frame);
   }
+
+  window.__POYTARA_CAPTURE_SET = function (ms) {
+    state.captureTime = Math.max(0, Number(ms) || 0);
+    timeline.done = false;
+    timeline.assetsReadyAt = 0;
+    timeline.faceComputed = false;
+    timeline.flashed = false;
+    timeline.copyShown = false;
+    timeline.lastBeat = -1;
+    if (beatCopy) {
+      beatCopy.style.opacity = "0";
+    }
+    document.body.classList.remove("is-figma-live");
+    if (openRoot) {
+      openRoot.classList.add("is-intro", "is-anim");
+      openRoot.classList.remove("is-hold", "is-ready", "is-beat3");
+    }
+  };
 
   if (forceBeat !== null && forceBeat !== undefined && forceBeat !== "") {
     jumpToBeat(parseInt(forceBeat, 10) || 0);
