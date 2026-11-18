@@ -11,21 +11,22 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
 import { RGBELoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/RGBELoader.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.4.1 — híbrido: plate Cycles (caverna+pedestal) + notebook Three v0.3.4.
-  CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta. Desktop only.
+  Poytara abertura estúdio v0.4.2 — híbrido: plate Cycles + notebook Three.
+  Framing travado v0.3.4 (left edge tela ~50%, crop direita). CSP: sem blob/workers/Draco/KTX2.
+  TIMING intacta. Desktop only.
 */
 
 
-/* v0.4.1 hybrid: pin final cam so full Space Black chassis+lid sit on pedestal
-   with same FOV/pose as Cycles plate (final-camera.json). Not screen-only crop. */
+/* v0.4.2: framing travado = v0.3.4 algorithm after pedestal seat (left edge ~50%).
+   Absolute pose matches frozen face with notebook on pedestal — same as Cycles plate. */
 var PINNED_FINAL_CAM = {
-  position: [-2.65, 3.55, 7.15],
-  target: [0.85, 1.62, -0.55],
+  position: [-1.0996000289916994, 4.436373995489058, 5.04124022324688],
+  target: [-0.5668000221252443, 1.9154462221616084, -1.6575034992289321],
   fov: 26
-};
+}; /* locked dump after seat — v0.3.4 framing */
 
-var BUILD = "notebook-studio-v041-20261118190320";
-var CDN_TAG = "v0.4.1";
+var BUILD = "notebook-studio-v042-20261118194308";
+var CDN_TAG = "v0.4.2";
 
 var reduced =
   window.matchMedia &&
@@ -138,7 +139,7 @@ var state = {
   finalCamLocked: false, /* v0.3.4 reframes */
   loadProgress: 0,
   wireframe: true,
-  studio: "hybrid-plate-v041",
+  studio: "hybrid-plate-v042",
   build: BUILD,
 };
 
@@ -585,8 +586,8 @@ function bindScreenTexture(root, figma) {
 
 function makeStudioFloor() {
   /*
-    v0.4.1 hybrid: no 3D cave/god-ray planes. Plate is screen-space behind notebook.
-    Invisible ground only for dissolve wire + optional soft contact (plate already has shadow).
+    v0.4.2 hybrid: plate carries organic cave + carved pedestal. Soft contact AO on top.
+    Invisible ground only for dissolve wire.
   */
   var group = new THREE.Group();
   group.name = "hybridPlateWorld";
@@ -618,11 +619,28 @@ function makeStudioFloor() {
   floorWire.name = "floorWire";
   group.add(floorWire);
 
+  /* Soft elliptical contact under chassis (AO read) */
+  var contact = new THREE.Mesh(
+    new THREE.CircleGeometry(1.55, 48),
+    new THREE.MeshBasicMaterial({
+      color: 0x0a0705,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      toneMapped: false,
+    })
+  );
+  contact.rotation.x = -Math.PI / 2;
+  contact.position.set(1.15, 1.222, -0.35);
+  contact.name = "softContact";
+  contact.renderOrder = 1;
+  group.add(contact);
+
   return {
     group: group,
     floorWire: floorWire,
     ground: ground,
-    contact: null,
+    contact: contact,
     glow: null,
     softRefl: null,
     plate: null,
@@ -828,10 +846,10 @@ function upgradeChassisMaterials(root, figmaTex) {
         metalnessMap: null,
         aoMap: m.aoMap || null,
         metalness: isBase ? 0.68 : 0.8,
-        roughness: isBase ? 0.55 : 0.48,
-        clearcoat: 0.1,
-        clearcoatRoughness: 0.68,
-        envMapIntensity: isBase ? 0.35 : 0.22,
+        roughness: isBase ? 0.72 : 0.52,
+        clearcoat: isBase ? 0.04 : 0.08,
+        clearcoatRoughness: isBase ? 0.85 : 0.7,
+        envMapIntensity: isBase ? 0.16 : 0.18,
         reflectivity: 0.32,
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
@@ -1367,7 +1385,7 @@ async function init() {
     camera.add(plateMesh);
     scene.add(camera);
     studio.plate = plateMesh;
-    state.plateSource = "cycles-cave-pedestal-v041";
+    state.plateSource = "cycles-cave-pedestal-v042";
   }
 
   var loader = new GLTFLoader(manager);
@@ -1470,9 +1488,12 @@ async function init() {
   macbook.position.z += pedZ / MODEL_SCALE;
   box.setFromObject(macbook);
   /* Seat slightly into plate top so Space Black base reads planted (hybrid) */
-  macbook.position.y += (pedTop - box.min.y - 0.025) / MODEL_SCALE;
+  macbook.position.y += (pedTop - box.min.y - 0.008) / MODEL_SCALE;
   if (studio.floorWire) {
     studio.floorWire.position.set(pedX, pedTop * 0.5, pedZ);
+  }
+  if (studio.contact) {
+    studio.contact.position.set(pedX, pedTop + 0.002, pedZ);
   }
 
   applyLidPose(bevels, poses, "open");
@@ -1634,7 +1655,6 @@ async function init() {
       camFace.addScaledVector(screenUp, faceDist * 0.01);
       camFace.addScaledVector(screenRight, -screenWorldW * 0.28);
       camFaceTarget.addScaledVector(screenRight, -screenWorldW * 0.1);
-      /* Prefer pinned hybrid cam (full chassis on pedestal) */
       if (PINNED_FINAL_CAM) {
         camFace.set(PINNED_FINAL_CAM.position[0], PINNED_FINAL_CAM.position[1], PINNED_FINAL_CAM.position[2]);
         camFaceTarget.set(PINNED_FINAL_CAM.target[0], PINNED_FINAL_CAM.target[1], PINNED_FINAL_CAM.target[2]);
@@ -2129,7 +2149,14 @@ async function init() {
       studio.glow.material.opacity = bloomFlash > 0.15 ? 0.04 : 0.1 + 0.05 * timeline.figmaP;
     }
     if (studio.contact) {
-      studio.contact.visible = false;
+      var showContact =
+        t >= T_FACE0 ||
+        timeline.done ||
+        (captureMode && state.captureTime >= T_FACE0);
+      studio.contact.visible = showContact;
+      if (studio.contact.material) {
+        studio.contact.material.opacity = showContact ? 0.42 : 0;
+      }
     }
     if (studio.softRefl && studio.softRefl.material) {
       studio.softRefl.visible = true;
@@ -2152,9 +2179,11 @@ async function init() {
       rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 3.0 : 2.6) : (isMobile ? 2.75 : 2.4);
       if (rimFront) rimFront.intensity = bloomFlash > 0.08 ? (isMobile ? 2.3 : 2.0) : (isMobile ? 2.45 : 2.2);
       /* Grazing key + near palm spot: palmrest mean target 25–35/255 (probe) */
-      if (deckKey) deckKey.intensity = bloomFlash > 0.08 ? 0.28 : (isMobile ? 0.9 : 1.15);
-      if (deckFill) deckFill.intensity = bloomFlash > 0.08 ? 0.12 : (isMobile ? 0.28 : 0.38);
-      if (deckSpot) deckSpot.intensity = bloomFlash > 0.08 ? 1.2 : (isMobile ? 8 : 12);
+      /* v0.4.2: palmrest glare↓ — less frontal deck light */
+      if (deckKey) deckKey.intensity = bloomFlash > 0.08 ? 0.12 : (isMobile ? 0.35 : 0.42);
+      if (deckFill) deckFill.intensity = bloomFlash > 0.08 ? 0.06 : (isMobile ? 0.12 : 0.16);
+      /* Less frontal spot → palmrest glare↓ (v0.4.2) */
+      if (deckSpot) deckSpot.intensity = bloomFlash > 0.08 ? 0.4 : (isMobile ? 2.0 : 2.6);
       if (studio.softRefl && studio.softRefl.material && bloomFlash <= 0.15) {
         studio.softRefl.material.opacity = 0.15;
         studio.softRefl.visible = true;
@@ -2598,6 +2627,27 @@ window.__POYTARA_PROBE_MESHES = function () {
     return { count: out.length, meshes: out, cam: camera.position.toArray(), plate: plateMesh ? { opacity: plateMesh.material.opacity, pos: plateMesh.position.toArray(), parent: plateMesh.parent && plateMesh.parent.type } : null };
   };
 
+  window.__POYTARA_CAPTURE_WIRE_OVERLAY = function () {
+    state.captureTime = 8200;
+    applyTimeline(8200);
+    applyFinalStudioLook(1);
+    applyLidPose(bevels, poses, "open");
+    state.lidPose = "open";
+    camera.position.copy(camFace);
+    camera.lookAt(camFaceTarget);
+    setWireframeMix(matEntries, 1);
+    setEdgeWireOpacity(edgeWires, 1);
+    if (plateMesh && plateMesh.material) {
+      plateMesh.material.opacity = 1;
+      plateMesh.visible = true;
+    }
+    if (screenOverlay) screenOverlay.visible = false;
+    if (beatCopy) beatCopy.style.opacity = "0";
+    updatePlateBackdrop(1, 1);
+    renderFrame();
+    return { build: BUILD, tag: CDN_TAG, cam: camFace.toArray(), target: camFaceTarget.toArray() };
+  };
+
 window.__POYTARA_CAPTURE_CLOSE_PEDESTAL = function () {
     state.captureTime = 8200;
     applyTimeline(8200);
@@ -2652,12 +2702,12 @@ window.__POYTARA_CAPTURE_CLOSE_PEDESTAL = function () {
     build: BUILD,
     mode: "three",
     glb: glbUrl,
-    studio: "hybrid-plate-v041",
+    studio: "hybrid-plate-v042",
     tag: CDN_TAG,
   });
   window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · studio v0.4.1 hybrid · stripeFix=" +
+    "ready · studio v0.4.2 hybrid · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
       (state.dofOk ? " · dof" : " · no-dof") +
