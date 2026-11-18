@@ -11,12 +11,12 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
 import { RGBELoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/RGBELoader.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.3.1 — Space Gray/Black, hinge, framing, flash still, mobile.
+  Poytara abertura estúdio v0.3.2 — framing v030 + trackpad, no disk, particles, emissive, Cycles cam.
   CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta.
 */
 
-var BUILD = "notebook-studio-v031-20261118125244";
-var CDN_TAG = "v0.3.1";
+var BUILD = "notebook-studio-v032-20261118130240";
+var CDN_TAG = "v0.3.2";
 
 var reduced =
   window.matchMedia &&
@@ -523,6 +523,7 @@ function bindScreenTexture(root, figma) {
   plane.rotateX(Math.PI / 2);
   var mat = new THREE.MeshBasicMaterial({
     map: figma.texture,
+    color: new THREE.Color(1.14, 1.14, 1.16),
     toneMapped: false,
     side: THREE.FrontSide,
     transparent: true,
@@ -551,8 +552,8 @@ function bindScreenTexture(root, figma) {
     clearcoat: 1,
     clearcoatRoughness: 0.05,
     envMapIntensity: 1.05,
-    emissive: new THREE.Color(0x000000),
-    emissiveIntensity: 0,
+    emissive: new THREE.Color(0x1a2230),
+    emissiveIntensity: 0.35,
     side: THREE.FrontSide,
   });
   screenMesh.material = glass;
@@ -590,10 +591,10 @@ function makeStudioFloor() {
   gc.width = 256;
   gc.height = 256;
   var gctx = gc.getContext("2d");
-  var grd = gctx.createRadialGradient(128, 128, 4, 128, 128, 128);
-  grd.addColorStop(0, "rgba(180,190,205,0.35)");
-  grd.addColorStop(0.2, "rgba(80,90,105,0.12)");
-  grd.addColorStop(0.5, "rgba(20,22,28,0.04)");
+  var grd = gctx.createRadialGradient(128, 128, 8, 128, 128, 128);
+  grd.addColorStop(0, "rgba(140,150,165,0.16)");
+  grd.addColorStop(0.35, "rgba(40,45,55,0.05)");
+  grd.addColorStop(0.7, "rgba(10,12,16,0.015)");
   grd.addColorStop(1, "rgba(0,0,0,0)");
   gctx.fillStyle = grd;
   gctx.fillRect(0, 0, 256, 256);
@@ -601,11 +602,11 @@ function makeStudioFloor() {
   glowTex.needsUpdate = true;
 
   var glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.2, 2.2),
+    new THREE.PlaneGeometry(3.4, 3.4),
     new THREE.MeshBasicMaterial({
       map: glowTex,
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.14,
       blending: THREE.NormalBlending,
       depthWrite: false,
       toneMapped: false,
@@ -616,13 +617,15 @@ function makeStudioFloor() {
   glow.name = "floorGlow";
   group.add(glow);
 
+  /* Contact: invisible as a shape — diffuse only, no hard disk/ellipse */
   var contact = new THREE.Mesh(
-    new THREE.CircleGeometry(1.6, 48),
-    new THREE.ShadowMaterial({ opacity: 0.72 })
+    new THREE.CircleGeometry(2.4, 64),
+    new THREE.ShadowMaterial({ opacity: 0.08 })
   );
   contact.rotation.x = -Math.PI / 2;
   contact.position.y = 0.0025;
   contact.receiveShadow = true;
+  contact.visible = false;
   group.add(contact);
 
   /* Dissolve-only grid; never in final */
@@ -641,23 +644,21 @@ function makeStudioFloor() {
   group.add(floorWire);
 
   var softRefl = new THREE.Mesh(
-    new THREE.CircleGeometry(1.55, 64),
-    new THREE.MeshPhysicalMaterial({
-      color: 0x050608,
-      metalness: 0.98,
-      roughness: 0.22,
-      envMapIntensity: 0.45,
-      clearcoat: 0.65,
-      clearcoatRoughness: 0.4,
+    new THREE.PlaneGeometry(3.8, 3.8),
+    new THREE.MeshBasicMaterial({
+      map: glowTex,
+      color: 0x9aa8b8,
       transparent: true,
-      opacity: 0.32,
+      opacity: 0.09,
       depthWrite: false,
+      blending: THREE.NormalBlending,
+      toneMapped: false,
     })
   );
   softRefl.rotation.x = -Math.PI / 2;
   softRefl.position.y = 0.0006;
   softRefl.name = "floorSoftReflection";
-  softRefl.receiveShadow = true;
+  softRefl.receiveShadow = false;
   group.add(softRefl);
 
   return {
@@ -691,27 +692,27 @@ function makeParticles(count) {
   var pos = new Float32Array(count * 3);
   var i;
   for (i = 0; i < count; i++) {
-    /* Bias hard into screen light beam (front of lid / over keyboard) */
-    var inCone = Math.random() < 0.82;
+    /* ~90% in screen beam over keys; rare soft strays almost invisible */
+    var inCone = Math.random() < 0.9;
     if (inCone) {
-      pos[i * 3] = (Math.random() - 0.25) * 2.4;
-      pos[i * 3 + 1] = Math.random() * 1.6 + 0.12;
-      pos[i * 3 + 2] = (Math.random() - 0.15) * 2.0 + 0.55;
+      pos[i * 3] = (Math.random() - 0.2) * 1.55;
+      pos[i * 3 + 1] = Math.random() * 1.15 + 0.18;
+      pos[i * 3 + 2] = (Math.random() - 0.1) * 1.35 + 0.35;
     } else {
-      pos[i * 3] = (Math.random() - 0.35) * 7;
-      pos[i * 3 + 1] = Math.random() * 3.5 + 0.05;
-      pos[i * 3 + 2] = (Math.random() - 0.45) * 6;
+      pos[i * 3] = (Math.random() - 0.35) * 3.2;
+      pos[i * 3 + 1] = Math.random() * 2.2 + 0.05;
+      pos[i * 3 + 2] = (Math.random() - 0.4) * 2.8;
     }
   }
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   var mat = new THREE.PointsMaterial({
-    size: 0.045,
+    size: 0.028,
     map: makeDustTexture(),
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.22,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    color: 0xf0f6ff,
+    color: 0xe8f0ff,
     sizeAttenuation: true,
     toneMapped: false,
   });
@@ -752,10 +753,10 @@ function shadeKeyAlbedo(map) {
         d[i + 1] = d[i];
         d[i + 2] = d[i];
       } else {
-        /* Chassis aluminum — Space Gray/Black */
-        d[i] = Math.round(r * 0.28 + 6);
-        d[i + 1] = Math.round(g * 0.29 + 6);
-        d[i + 2] = Math.round(b * 0.32 + 8);
+        /* Chassis aluminum — Space Black */
+        d[i] = Math.round(r * 0.18 + 4);
+        d[i + 1] = Math.round(g * 0.19 + 4);
+        d[i + 2] = Math.round(b * 0.22 + 5);
       }
     }
     ctx.putImageData(id, 0, 0);
@@ -844,8 +845,8 @@ function upgradeChassisMaterials(root, figmaTex) {
       var colorMap = shadeKeyAlbedo(m.map || null);
       var roughMap = boostKeyRoughness(m.roughnessMap || null, m.map || colorMap);
       /* Space Gray/Black aluminum — broad soft specular, not blown silver */
-      var baseCol = new THREE.Color(0x0a0b0d);
-      if (isLid) baseCol.set(0x090a0c);
+      var baseCol = new THREE.Color(0x060708);
+      if (isLid) baseCol.set(0x050607);
       var phys = new THREE.MeshPhysicalMaterial({
         color: baseCol,
         map: colorMap,
@@ -853,12 +854,12 @@ function upgradeChassisMaterials(root, figmaTex) {
         roughnessMap: roughMap,
         metalnessMap: null,
         aoMap: m.aoMap || null,
-        metalness: 0.82,
-        roughness: isBase ? 0.55 : 0.46,
-        clearcoat: 0.18,
-        clearcoatRoughness: 0.5,
-        envMapIntensity: 0.22,
-        reflectivity: 0.4,
+        metalness: 0.78,
+        roughness: isBase ? 0.62 : 0.52,
+        clearcoat: 0.0,
+        clearcoatRoughness: 1.0,
+        envMapIntensity: 0.06,
+        reflectivity: 0.18,
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
       });
@@ -1254,7 +1255,7 @@ async function init() {
   var studio = makeStudioFloor();
   scene.add(studio.group);
 
-  var particleCount = reduced ? 0 : isMobile ? 160 : state.gpuOffLikely ? 240 : 420;
+  var particleCount = reduced ? 0 : isMobile ? 64 : state.gpuOffLikely ? 96 : 168;
   var dust = particleCount > 0 ? makeParticles(particleCount) : null;
   if (dust) {
     scene.add(dust);
@@ -1315,7 +1316,7 @@ async function init() {
       hdrTex.mapping = THREE.EquirectangularReflectionMapping;
       var envRT = pmrem.fromEquirectangular(hdrTex);
       scene.environment = envRT.texture;
-      scene.environmentIntensity = isMobile ? 0.22 : 0.16;
+      scene.environmentIntensity = isMobile ? 0.14 : 0.1;
       scene.background = new THREE.Color(0x000000);
       hdrTex.dispose();
       pmrem.dispose();
@@ -1502,16 +1503,18 @@ async function init() {
       Desktop horizontal (v0.2.3): left display edge ~50%, right side cropped out.
       Mobile: notebook above, info below.
     */
-    /* Desktop: pull back + lift so front of base sits ~88–90% down frame */
-    /* Mobile: negative ndcY lifts notebook into upper/mid third */
-    var fillH = isMobile ? 0.26 : 0.36;
+    /*
+      Desktop = v0.3.0 framing (fillH 0.48, ndcY 0.22 → left edge ~50%, top ~8%)
+      with a tiny pull so front/trackpad lands ~88–90%.
+      Mobile: keep upper/mid + copy below.
+    */
+    var fillH = isMobile ? 0.26 : 0.46;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? -0.62 : 0.34;
+    var ndcY = isMobile ? -0.62 : 0.22;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
-      /* Notebook upper/mid; whole chassis or light symmetric crop */
       camFaceTarget.copy(center).addScaledVector(screenUp, vertShift);
       camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.08);
       camFace.addScaledVector(screenUp, faceDist * 0.06);
@@ -1522,10 +1525,10 @@ async function init() {
       camFaceTarget
         .copy(leftEdge)
         .addScaledVector(screenRight, screenWorldW * 0.02)
-        .addScaledVector(screenUp, -vertShift * 1.35);
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.12);
-      camFace.addScaledVector(screenUp, faceDist * 0.02);
-      /* Shift cam left so right of notebook exits frame (v0.2.3 crop) */
+        .addScaledVector(screenUp, -vertShift);
+      /* Slight pull vs pure v030 faceDist so trackpad ~88–90% */
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.04);
+      camFace.addScaledVector(screenUp, faceDist * 0.015);
       camFace.addScaledVector(screenRight, -screenWorldW * 0.22);
       camFaceTarget.addScaledVector(screenRight, -screenWorldW * 0.08);
     }
@@ -1553,15 +1556,14 @@ async function init() {
       }
       if (studio.glow && studio.glow.material) {
         studio.glow.visible = true;
-        studio.glow.material.opacity = 0.38 + 0.1 * a;
+        studio.glow.material.opacity = 0.1 + 0.06 * a;
       }
-      if (studio.contact && studio.contact.material) {
-        studio.contact.visible = true;
-        studio.contact.material.opacity = 0.75;
+      if (studio.contact) {
+        studio.contact.visible = false;
       }
       if (studio.softRefl && studio.softRefl.material) {
         studio.softRefl.visible = true;
-        studio.softRefl.material.opacity = 0.22 + 0.12 * a;
+        studio.softRefl.material.opacity = 0.08 + 0.06 * a;
       }
     }
     if (screenOverlay && screenOverlay.material) {
@@ -1995,22 +1997,21 @@ async function init() {
     }
     if (studio.glow && studio.glow.material) {
       studio.glow.visible = true;
-      studio.glow.material.opacity = bloomFlash > 0.15 ? 0.06 : 0.36 + 0.1 * timeline.figmaP;
+      studio.glow.material.opacity = bloomFlash > 0.15 ? 0.04 : 0.1 + 0.05 * timeline.figmaP;
     }
     if (studio.contact) {
-      studio.contact.visible = true;
-      if (studio.contact.material) studio.contact.material.opacity = 0.8;
+      studio.contact.visible = false;
     }
     if (studio.softRefl && studio.softRefl.material) {
       studio.softRefl.visible = true;
-      studio.softRefl.material.opacity = bloomFlash > 0.15 ? 0.08 : 0.26 + 0.08 * timeline.figmaP;
+      studio.softRefl.material.opacity = bloomFlash > 0.15 ? 0.04 : 0.09 + 0.04 * timeline.figmaP;
     }
     /* Stable key/fill — same aluminum in flash and idle (no silver wash) */
-    key.intensity = isMobile ? 0.16 : 0.12;
-    fill.intensity = isMobile ? 0.06 : 0.04;
-    rimLid.intensity = bloomFlash > 0.08 ? (isMobile ? 3.0 : 2.6) : (isMobile ? 2.6 : 2.15);
-    rim.intensity = bloomFlash > 0.08 ? (isMobile ? 4.4 : 3.8) : (isMobile ? 4.1 : 3.4);
-    rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 3.0 : 2.6) : (isMobile ? 2.8 : 2.3);
+    key.intensity = isMobile ? 0.1 : 0.07;
+    fill.intensity = isMobile ? 0.04 : 0.025;
+    rimLid.intensity = bloomFlash > 0.08 ? (isMobile ? 2.4 : 2.0) : (isMobile ? 2.1 : 1.7);
+    rim.intensity = bloomFlash > 0.08 ? (isMobile ? 3.4 : 2.9) : (isMobile ? 3.1 : 2.55);
+    rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 2.4 : 2.0) : (isMobile ? 2.2 : 1.75);
 
     /* Camera: enter dolly → hold → face+zoom frontal (never scale model) */
     if (t < T_ENTER1) {
@@ -2108,8 +2109,9 @@ async function init() {
     screenBounce.intensity = isMobile ? 1.9 : 1.6;
     if (studio.glow && studio.glow.material) {
       studio.glow.visible = true;
-      studio.glow.material.opacity = 0.4;
+      studio.glow.material.opacity = 0.12;
     }
+    if (studio.contact) studio.contact.visible = false;
     if (screenOverlay) screenOverlay.material.opacity = 1;
     if (screenFlashPlane) {
       screenFlashPlane.visible = false;
@@ -2139,8 +2141,8 @@ async function init() {
     /* Prefer particles in the screen light cone */
     if (dust.material) {
       var live = Math.max(timeline.figmaP || 0, bloomFlash, screenBounce.intensity / 2.5);
-      dust.material.opacity = 0.35 + 0.55 * Math.min(1, live);
-      dust.material.size = state.gpuOffLikely || isMobile ? 0.085 : 0.062;
+      dust.material.opacity = 0.12 + 0.22 * Math.min(1, live);
+      dust.material.size = state.gpuOffLikely || isMobile ? 0.038 : 0.028;
       dust.visible = live > 0.05 || timeline.done;
     }
   }
@@ -2176,13 +2178,7 @@ async function init() {
   function dumpCamera() {
     state.cameraDump = {
       position: camera.position.toArray(),
-      target: (function () {
-        var t = new THREE.Vector3();
-        /* approximate lookAt from camera direction */
-        camera.getWorldDirection(t);
-        t.multiplyScalar(faceDist || 2).add(camera.position);
-        return t.toArray();
-      })(),
+      target: camFaceTarget.toArray(),
       fov: camera.fov,
       near: camera.near,
       far: camera.far,
@@ -2191,8 +2187,34 @@ async function init() {
       faceDist: faceDist,
       camFace: camFace.toArray(),
       camFaceTarget: camFaceTarget.toArray(),
+      up: camera.up.toArray(),
+      /* Three.js Y-up → Blender Z-up after glTF import */
+      blenderPosition: [camera.position.x, -camera.position.z, camera.position.y],
+      blenderTarget: [camFaceTarget.x, -camFaceTarget.z, camFaceTarget.y],
     };
     return state.cameraDump;
+  }
+
+
+  function ensureFrameGuides(on) {
+    var el = document.getElementById("poytaraFrameGuides");
+    if (!on) {
+      if (el) el.style.display = "none";
+      return;
+    }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "poytaraFrameGuides";
+      el.setAttribute("aria-hidden", "true");
+      el.style.cssText =
+        "pointer-events:none;position:fixed;inset:0;z-index:9998;" +
+        "background:" +
+        "linear-gradient(to right,transparent calc(50% - 1px),rgba(0,255,180,0.85) 50%,transparent calc(50% + 1px))," +
+        "linear-gradient(to bottom,transparent calc(8% - 1px),rgba(0,200,255,0.85) 8%,transparent calc(8% + 1px))," +
+        "linear-gradient(to bottom,transparent calc(89% - 1px),rgba(255,180,0,0.85) 89%,transparent calc(89% + 1px));";
+      document.body.appendChild(el);
+    }
+    el.style.display = "block";
   }
 
   window.__POYTARA_CAPTURE_SET = function (ms) {
@@ -2226,6 +2248,13 @@ async function init() {
     state.captureTime = next;
     if (next >= 7000) {
       dumpCamera();
+      if (params.get("guides") === "1") {
+        ensureFrameGuides(true);
+      } else {
+        ensureFrameGuides(false);
+      }
+    } else {
+      ensureFrameGuides(false);
     }
   };
 
