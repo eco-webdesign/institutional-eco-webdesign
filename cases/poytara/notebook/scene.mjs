@@ -14,7 +14,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v025-20261117234904";
+var BUILD = "notebook-studio-v025-20261117235425";
 var CDN_TAG = "v0.2.5";
 
 var reduced =
@@ -652,7 +652,7 @@ function makeStudioFloor() {
   glowTex.needsUpdate = true;
 
   var glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.0, 2.0),
+    new THREE.PlaneGeometry(1.6, 1.6),
     new THREE.MeshBasicMaterial({
       map: glowTex,
       transparent: true,
@@ -764,18 +764,34 @@ function upgradeChassisMaterials(root, figmaTex) {
         return m;
       }
       var n = (o.name || "").toLowerCase();
+      var pn = "";
+      var cur = o.parent;
+      var depth = 0;
+      while (cur && depth < 6) {
+        pn += " " + String(cur.name || "").toLowerCase();
+        cur = cur.parent;
+        depth++;
+      }
       var isKey =
         n.indexOf("key") >= 0 ||
         n.indexOf("deck") >= 0 ||
-        n.indexOf("keyboard") >= 0;
+        n.indexOf("keyboard") >= 0 ||
+        n.indexOf("caps") >= 0 ||
+        n.indexOf("touch_bar") >= 0 ||
+        pn.indexOf("keyboard") >= 0 ||
+        pn.indexOf("caps_lock") >= 0 ||
+        pn.indexOf("touch_bar") >= 0;
       var baseCol;
       if (isKey) {
         /* Matte black keys — no white edge, no plastic blue */
         baseCol = new THREE.Color(0x050506);
       } else {
         /* Space Black / Space Gray aluminum */
-        baseCol = new THREE.Color(0x161618);
-        if (m.color) baseCol.lerp(m.color, 0.08);
+        baseCol = new THREE.Color(0x121214);
+        if (m.color) baseCol.lerp(m.color, 0.05);
+        if (n.indexOf("main_body") >= 0 || n.indexOf("macbook") >= 0 || n.indexOf("cube") >= 0) {
+          baseCol.set(0x101012);
+        }
       }
       var phys = new THREE.MeshPhysicalMaterial({
         color: baseCol,
@@ -899,6 +915,25 @@ function makeEdgeWires(root) {
     }
     var n = (o.name || "").toLowerCase();
     if (n.indexOf("screen") >= 0) {
+      return;
+    }
+    var pn = "";
+    var cur = o.parent;
+    var depth = 0;
+    while (cur && depth < 6) {
+      pn += " " + String(cur.name || "").toLowerCase();
+      cur = cur.parent;
+      depth++;
+    }
+    if (
+      n.indexOf("key") >= 0 ||
+      n.indexOf("keyboard") >= 0 ||
+      n.indexOf("caps") >= 0 ||
+      n.indexOf("touch_bar") >= 0 ||
+      pn.indexOf("keyboard") >= 0 ||
+      pn.indexOf("caps_lock") >= 0 ||
+      pn.indexOf("touch_bar") >= 0
+    ) {
       return;
     }
     try {
@@ -1399,7 +1434,7 @@ async function init() {
       }
       if (studio.glow && studio.glow.material) {
         studio.glow.visible = true;
-        studio.glow.material.opacity = 0.3 + 0.1 * a;
+        studio.glow.material.opacity = 0.22 + 0.06 * a;
       }
       if (studio.contact && studio.contact.material) {
         studio.contact.visible = true;
@@ -1770,7 +1805,7 @@ async function init() {
       }
       /* Localized flash: screen plane only. Tiny keyboard kiss after peak decays. */
       if (screenFlashPlane && screenFlashPlane.material) {
-        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(0.92, bloomFlash * 1.05) : 0;
+        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(1, bloomFlash * 1.15) : 0;
         screenFlashPlane.visible = bloomFlash > 0.02;
         screenFlashPlane.scale.set(0.9, 0.9, 0.9);
       }
@@ -1821,7 +1856,7 @@ async function init() {
         studio.glow.material.opacity = 0;
       } else {
         studio.glow.visible = true;
-        studio.glow.material.opacity = 0.28 + 0.08 * timeline.figmaP;
+        studio.glow.material.opacity = 0.2 + 0.05 * timeline.figmaP;
       }
     }
     if (studio.contact) {
@@ -1833,8 +1868,8 @@ async function init() {
     rimLid.intensity = bloomFlash > 0.08 ? 1.8 : 1.35;
     rim.intensity = bloomFlash > 0.08 ? 2.6 : 2.2;
     rimHinge.intensity = bloomFlash > 0.08 ? 1.6 : 1.4;
-    /* ~0.45–0.55s decay at 60fps */
-    bloomFlash *= 0.88;
+    /* Slower decay so capture stills catch the screen peak */
+    bloomFlash *= 0.92;
 
     /* Camera: enter dolly → hold → face+zoom frontal (never scale model) */
     if (t < T_ENTER1) {
