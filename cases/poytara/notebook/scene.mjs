@@ -15,7 +15,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v022-20261117224041";
+var BUILD = "notebook-studio-v022-20261117224142";
 var CDN_TAG = "v0.2.2";
 
 var reduced =
@@ -1154,11 +1154,11 @@ async function init() {
 
     var vFov = THREE.MathUtils.degToRad(camera.fov);
     /* Pull back: screen ~55% of viewport so chassis + trackpad breathe */
-    var fillH = isMobile ? 0.42 : 0.55;
+    var fillH = isMobile ? 0.36 : 0.55;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
     /* Screen mid a bit above center → top chrome ~8%, base/trackpad in lower third */
-    var ndcY = isMobile ? 0.18 : 0.16;
+    var ndcY = isMobile ? 0.28 : 0.16;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
@@ -1456,10 +1456,16 @@ async function init() {
       setDof(0);
       return;
     }
-    if (!timeline.assetsReadyAt) {
-      timeline.assetsReadyAt = elapsed;
+    var t;
+    if (captureMode) {
+      /* elapsed is absolute timeline ms from harness */
+      t = Math.max(0, elapsed);
+    } else {
+      if (!timeline.assetsReadyAt) {
+        timeline.assetsReadyAt = elapsed;
+      }
+      t = Math.max(0, elapsed - timeline.assetsReadyAt);
     }
-    var t = Math.max(0, elapsed - timeline.assetsReadyAt);
 
     var beat = 0;
     if (t >= T_FACE0) beat = 3;
@@ -1660,21 +1666,24 @@ async function init() {
   }
 
   window.__POYTARA_CAPTURE_SET = function (ms) {
-    state.captureTime = Math.max(0, Number(ms) || 0);
-    timeline.done = false;
-    timeline.assetsReadyAt = 0;
-    timeline.faceComputed = false;
-    timeline.flashed = false;
-    timeline.copyShown = false;
-    timeline.lastBeat = -1;
-    if (beatCopy) {
-      beatCopy.style.opacity = "0";
+    var next = Math.max(0, Number(ms) || 0);
+    if (next < state.captureTime - 1) {
+      timeline.done = false;
+      timeline.faceComputed = false;
+      timeline.flashed = false;
+      timeline.copyShown = false;
+      timeline.lastBeat = -1;
+      bloomFlash = 0;
+      if (beatCopy) {
+        beatCopy.style.opacity = "0";
+      }
+      document.body.classList.remove("is-figma-live");
+      if (openRoot) {
+        openRoot.classList.add("is-intro", "is-anim");
+        openRoot.classList.remove("is-hold", "is-ready", "is-beat3");
+      }
     }
-    document.body.classList.remove("is-figma-live");
-    if (openRoot) {
-      openRoot.classList.add("is-intro", "is-anim");
-      openRoot.classList.remove("is-hold", "is-ready", "is-beat3");
-    }
+    state.captureTime = next;
   };
 
   if (forceBeat !== null && forceBeat !== undefined && forceBeat !== "") {
