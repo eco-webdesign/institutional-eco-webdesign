@@ -15,7 +15,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v022-20261117225130";
+var BUILD = "notebook-studio-v022-20261117225541";
 var CDN_TAG = "v0.2.2";
 
 var reduced =
@@ -1154,11 +1154,11 @@ async function init() {
 
     var vFov = THREE.MathUtils.degToRad(camera.fov);
     /* Pull back: screen ~55% of viewport so chassis + trackpad breathe */
-    var fillH = isMobile ? 0.32 : 0.55;
+    var fillH = isMobile ? 0.42 : 0.55;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
     /* Screen mid a bit above center → top chrome ~8%, base/trackpad in lower third */
-    var ndcY = isMobile ? 0.28 : 0.16;
+    var ndcY = isMobile ? 0.22 : 0.16;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
