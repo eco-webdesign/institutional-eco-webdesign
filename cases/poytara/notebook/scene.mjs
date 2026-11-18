@@ -11,12 +11,12 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
 import { RGBELoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/RGBELoader.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.3.3 — lock framing; final light = close Space Black; floor 10–15%; mobile center.
+  Poytara abertura estúdio v0.3.4 — final deck light + crop; close locked; mobile tight.
   CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta.
 */
 
-var BUILD = "notebook-studio-v033-20261118131358";
-var CDN_TAG = "v0.3.3";
+var BUILD = "notebook-studio-v034-20261118141255";
+var CDN_TAG = "v0.3.4";
 
 var reduced =
   window.matchMedia &&
@@ -124,7 +124,7 @@ var state = {
   captureMode: captureMode,
   captureTime: 0,
   lockCamera: null,
-  finalCamLocked: false,
+  finalCamLocked: false, /* v0.3.4 reframes */
   loadProgress: 0,
   wireframe: true,
   studio: "dark-dramatic",
@@ -592,10 +592,10 @@ function makeStudioFloor() {
   gc.width = 256;
   gc.height = 256;
   var gctx = gc.getContext("2d");
-  var grd = gctx.createRadialGradient(128, 128, 8, 128, 128, 128);
-  grd.addColorStop(0, "rgba(140,150,165,0.16)");
-  grd.addColorStop(0.35, "rgba(40,45,55,0.05)");
-  grd.addColorStop(0.7, "rgba(10,12,16,0.015)");
+  var grd = gctx.createRadialGradient(128, 128, 2, 128, 128, 128);
+  grd.addColorStop(0, "rgba(170,180,195,0.28)");
+  grd.addColorStop(0.25, "rgba(90,100,115,0.12)");
+  grd.addColorStop(0.55, "rgba(30,35,45,0.04)");
   grd.addColorStop(1, "rgba(0,0,0,0)");
   gctx.fillStyle = grd;
   gctx.fillRect(0, 0, 256, 256);
@@ -603,11 +603,11 @@ function makeStudioFloor() {
   glowTex.needsUpdate = true;
 
   var glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.4, 3.4),
+    new THREE.PlaneGeometry(4.2, 4.2),
     new THREE.MeshBasicMaterial({
       map: glowTex,
       transparent: true,
-      opacity: 0.14,
+      opacity: 0.16,
       blending: THREE.NormalBlending,
       depthWrite: false,
       toneMapped: false,
@@ -644,20 +644,21 @@ function makeStudioFloor() {
   floorWire.name = "floorWire";
   group.add(floorWire);
 
+  /* Front-edge strip under chassis lip (visible when notebook kisses bottom crop) */
   var softRefl = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.8, 3.8),
+    new THREE.PlaneGeometry(3.4, 1.55),
     new THREE.MeshBasicMaterial({
       map: glowTex,
-      color: 0x9aa8b8,
+      color: 0xb0bcc8,
       transparent: true,
-      opacity: 0.13,
+      opacity: 0.15,
       depthWrite: false,
       blending: THREE.NormalBlending,
       toneMapped: false,
     })
   );
   softRefl.rotation.x = -Math.PI / 2;
-  softRefl.position.y = 0.0006;
+  softRefl.position.set(0.15, 0.0006, 1.35);
   softRefl.name = "floorSoftReflection";
   softRefl.receiveShadow = false;
   group.add(softRefl);
@@ -838,8 +839,8 @@ function upgradeChassisMaterials(root, figmaTex) {
       var isLid = n === "lid_shell" || n.indexOf("lid") >= 0;
       var colorMap = shadeKeyAlbedo(m.map || null);
       var roughMap = boostKeyRoughness(m.roughnessMap || null, m.map || colorMap);
-      /* Space Gray/Black aluminum — broad soft specular, not blown silver */
-      var baseCol = new THREE.Color(0x060708);
+      /* Space Gray/Black aluminum — slightly lifted base so soft key reads on palmrest */
+      var baseCol = new THREE.Color(isBase ? 0x0c0e11 : 0x060708);
       if (isLid) baseCol.set(0x050607);
       var phys = new THREE.MeshPhysicalMaterial({
         color: baseCol,
@@ -848,15 +849,19 @@ function upgradeChassisMaterials(root, figmaTex) {
         roughnessMap: roughMap,
         metalnessMap: null,
         aoMap: m.aoMap || null,
-        metalness: 0.8,
-        roughness: isBase ? 0.58 : 0.5,
+        metalness: isBase ? 0.68 : 0.8,
+        roughness: isBase ? 0.62 : 0.5,
         clearcoat: 0.1,
         clearcoatRoughness: 0.68,
-        envMapIntensity: 0.16,
+        envMapIntensity: isBase ? 0.22 : 0.16,
         reflectivity: 0.32,
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
       });
+      if (isBase) {
+        phys.userData = phys.userData || {};
+        phys.userData.poytaraDeck = true;
+      }
       if (phys.map) {
         phys.map.colorSpace = THREE.SRGBColorSpace;
       }
@@ -1158,6 +1163,7 @@ async function init() {
       alpha: false,
       powerPreference: "high-performance",
       failIfMajorPerformanceCaveat: false,
+      preserveDrawingBuffer: true,
     });
   } catch (err) {
     showFallback("renderer-ctor");
@@ -1239,6 +1245,24 @@ async function init() {
   var rimFront = new THREE.DirectionalLight(0xd4e0f2, isMobile ? 2.2 : 1.85);
   rimFront.position.set(2.4, 0.55, 7.2);
   scene.add(rimFront);
+
+  /* Soft grazing key on deck — FINAL only (close stays v0.3.3) */
+  var deckKey = new THREE.DirectionalLight(0xf4f0e8, 0);
+  deckKey.position.set(0.55, 6.4, 6.4);
+  deckKey.target.position.set(0.2, 0.06, 0.45);
+  scene.add(deckKey);
+  scene.add(deckKey.target);
+  var deckFill = new THREE.DirectionalLight(0xc8d2e0, 0);
+  deckFill.position.set(-2.2, 2.8, 5.0);
+  deckFill.target.position.set(0.1, 0.05, 0.35);
+  scene.add(deckFill);
+  scene.add(deckFill.target);
+  /* Palmrest spot — close cima/frente (physically-correct units need near throw) */
+  var deckSpot = new THREE.SpotLight(0xf2eee6, 0, 2.8, Math.PI / 4.2, 0.62, 1.15);
+  deckSpot.position.set(0.4, 1.55, 1.85);
+  deckSpot.target.position.set(0.35, 0.08, 0.7);
+  scene.add(deckSpot);
+  scene.add(deckSpot.target);
 
   var fill = new THREE.DirectionalLight(0x2a3340, 0.04);
   fill.position.set(-3.2, 2.2, 4.2);
@@ -1415,6 +1439,41 @@ async function init() {
   applyLidPose(bevels, poses, "closed");
   state.lidPose = "closed";
 
+  /* Aim deck lights at palmrest (front half of base) after recentering */
+  (function aimDeckLights() {
+    var baseMesh = root.getObjectByName("base");
+    var aimBox = new THREE.Box3();
+    if (baseMesh) aimBox.setFromObject(baseMesh);
+    else aimBox.setFromObject(macbook);
+    var palm = new THREE.Vector3(
+      aimBox.min.x + (aimBox.max.x - aimBox.min.x) * 0.62,
+      aimBox.min.y + (aimBox.max.y - aimBox.min.y) * 0.92,
+      aimBox.min.z + (aimBox.max.z - aimBox.min.z) * 0.72
+    );
+    if (deckKey && deckKey.target) {
+      deckKey.target.position.copy(palm);
+      deckKey.position.set(palm.x + 0.35, palm.y + 2.4, palm.z + 2.1);
+      deckKey.target.updateMatrixWorld();
+    }
+    if (deckFill && deckFill.target) {
+      deckFill.target.position.copy(palm);
+      deckFill.position.set(palm.x - 1.6, palm.y + 1.4, palm.z + 1.6);
+      deckFill.target.updateMatrixWorld();
+    }
+    if (deckSpot && deckSpot.target) {
+      deckSpot.target.position.copy(palm);
+      deckSpot.position.set(palm.x + 0.15, palm.y + 1.15, palm.z + 1.05);
+      deckSpot.target.updateMatrixWorld();
+    }
+    if (studio.softRefl) {
+      studio.softRefl.position.set(
+        palm.x * 0.4,
+        0.0006,
+        aimBox.max.z + 0.35
+      );
+    }
+  })();
+
   var controls = null;
   if (mode === "orbit") {
     controls = new OrbitControls(camera, canvas);
@@ -1507,18 +1566,18 @@ async function init() {
       with a tiny pull so front/trackpad lands ~88–90%.
       Mobile: keep upper/mid + copy below.
     */
-    /* Desktop framing LOCKED (v0.3.2/v030): do not drift */
-    var fillH = isMobile ? 0.30 : 0.46;
+    /* Desktop: +8–12% closer than v033; left edge ~50%; trackpad ~92–95% */
+    var fillH = isMobile ? 0.46 : 0.515;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? -0.28 : 0.22;
+    var ndcY = isMobile ? -0.18 : 0.30;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
-      /* Notebook centered in band above copy */
+      /* Larger notebook; tight vertical gaps to header + info */
       camFaceTarget.copy(center).addScaledVector(screenUp, vertShift * 0.85);
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.05);
-      camFace.addScaledVector(screenUp, faceDist * 0.08);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 0.9);
+      camFace.addScaledVector(screenUp, faceDist * 0.02);
     } else {
       var leftEdge = new THREE.Vector3()
         .copy(center)
@@ -1527,11 +1586,11 @@ async function init() {
         .copy(leftEdge)
         .addScaledVector(screenRight, screenWorldW * 0.02)
         .addScaledVector(screenUp, -vertShift);
-      /* Slight pull vs pure v030 faceDist so trackpad ~88–90% */
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.04);
-      camFace.addScaledVector(screenUp, faceDist * 0.015);
-      camFace.addScaledVector(screenRight, -screenWorldW * 0.22);
-      camFaceTarget.addScaledVector(screenRight, -screenWorldW * 0.08);
+      /* Dolly in ~10%; right crop; trackpad near bottom */
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 0.92);
+      camFace.addScaledVector(screenUp, faceDist * 0.01);
+      camFace.addScaledVector(screenRight, -screenWorldW * 0.28);
+      camFaceTarget.addScaledVector(screenRight, -screenWorldW * 0.1);
       if (!state.finalCamLocked) {
         state._frozenFace = camFace.clone();
         state._frozenFaceTarget = camFaceTarget.clone();
@@ -1574,7 +1633,7 @@ async function init() {
       }
       if (studio.softRefl && studio.softRefl.material) {
         studio.softRefl.visible = true;
-        studio.softRefl.material.opacity = 0.12 + 0.03 * a;
+        studio.softRefl.material.opacity = 0.15 + 0.02 * a;
       }
     }
     if (screenOverlay && screenOverlay.material) {
@@ -1721,7 +1780,7 @@ async function init() {
     /* Desktop: left black. Mobile: below notebook with clear gap. */
     if (isMobile) {
       beatCopy.style.top = "auto";
-      beatCopy.style.bottom = "4%";
+      beatCopy.style.bottom = "2.5%";
       beatCopy.style.left = "8%";
       beatCopy.style.right = "8%";
       beatCopy.style.maxWidth = "84%";
@@ -1982,10 +2041,10 @@ async function init() {
           screenBounce.angle = Math.PI / 22;
           screenBounce.decay = 2.6;
         } else {
-          screenBounce.intensity = (isMobile ? 2.55 : 2.35) * timeline.figmaP;
-          screenBounce.distance = 2.85;
-          screenBounce.angle = Math.PI / 11;
-          screenBounce.decay = 1.85;
+          screenBounce.intensity = (isMobile ? 2.85 : 2.65) * timeline.figmaP;
+          screenBounce.distance = 3.0;
+          screenBounce.angle = Math.PI / 10;
+          screenBounce.decay = 1.7;
         }
       }
     } else {
@@ -2015,16 +2074,43 @@ async function init() {
     }
     if (studio.softRefl && studio.softRefl.material) {
       studio.softRefl.visible = true;
-      studio.softRefl.material.opacity = bloomFlash > 0.15 ? 0.06 : 0.13 + 0.02 * timeline.figmaP;
+      studio.softRefl.material.opacity = bloomFlash > 0.15 ? 0.08 : 0.155 + 0.02 * timeline.figmaP;
     }
     /* Stable key/fill — same aluminum in flash and idle (no silver wash) */
-    key.intensity = isMobile ? 0.18 : 0.14;
-    fill.intensity = isMobile ? 0.07 : 0.05;
-    rimLid.intensity = bloomFlash > 0.08 ? (isMobile ? 2.8 : 2.4) : (isMobile ? 2.5 : 2.15);
-    rim.intensity = bloomFlash > 0.08 ? (isMobile ? 4.0 : 3.5) : (isMobile ? 3.7 : 3.2);
-    rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 2.9 : 2.5) : (isMobile ? 2.6 : 2.2);
-    if (typeof rimFront !== "undefined" && rimFront) {
-      rimFront.intensity = bloomFlash > 0.08 ? (isMobile ? 2.0 : 1.7) : (isMobile ? 2.15 : 1.9);
+    /*
+      Close (camNear / pre-face): keep v0.3.3 look LOCKED.
+      Final (face+): soft grazing deck key so palmrest ~25–35/255.
+    */
+    var atFinalLook =
+      t >= T_FACE0 ||
+      (captureMode && state.captureTime >= T_FACE0) ||
+      timeline.done;
+    if (atFinalLook) {
+      key.intensity = isMobile ? 0.22 : 0.18;
+      fill.intensity = isMobile ? 0.09 : 0.07;
+      rimLid.intensity = bloomFlash > 0.08 ? (isMobile ? 3.0 : 2.6) : (isMobile ? 2.7 : 2.35);
+      rim.intensity = bloomFlash > 0.08 ? (isMobile ? 4.2 : 3.7) : (isMobile ? 3.9 : 3.45);
+      rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 3.0 : 2.6) : (isMobile ? 2.75 : 2.4);
+      if (rimFront) rimFront.intensity = bloomFlash > 0.08 ? (isMobile ? 2.3 : 2.0) : (isMobile ? 2.45 : 2.2);
+      /* Grazing key + near palm spot: palmrest mean target 25–35/255 (probe) */
+      if (deckKey) deckKey.intensity = bloomFlash > 0.08 ? 0.45 : (isMobile ? 1.55 : 2.15);
+      if (deckFill) deckFill.intensity = bloomFlash > 0.08 ? 0.2 : (isMobile ? 0.48 : 0.72);
+      if (deckSpot) deckSpot.intensity = bloomFlash > 0.08 ? 2.5 : (isMobile ? 18 : 32);
+      if (studio.softRefl && studio.softRefl.material && bloomFlash <= 0.15) {
+        studio.softRefl.material.opacity = 0.15;
+        studio.softRefl.visible = true;
+      }
+    } else {
+      /* Close-locked intensities (v0.3.3) */
+      key.intensity = isMobile ? 0.18 : 0.14;
+      fill.intensity = isMobile ? 0.07 : 0.05;
+      rimLid.intensity = bloomFlash > 0.08 ? (isMobile ? 2.8 : 2.4) : (isMobile ? 2.5 : 2.15);
+      rim.intensity = bloomFlash > 0.08 ? (isMobile ? 4.0 : 3.5) : (isMobile ? 3.7 : 3.2);
+      rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 2.9 : 2.5) : (isMobile ? 2.6 : 2.2);
+      if (rimFront) rimFront.intensity = bloomFlash > 0.08 ? (isMobile ? 2.0 : 1.7) : (isMobile ? 2.15 : 1.9);
+      if (deckKey) deckKey.intensity = 0;
+      if (deckFill) deckFill.intensity = 0;
+      if (deckSpot) deckSpot.intensity = 0;
     }
 
     /* Camera: enter dolly → hold → face+zoom frontal (never scale model) */
@@ -2334,6 +2420,64 @@ async function init() {
   window.__POYTARA_DUMP_CAMERA = function () {
     dumpCamera();
     return state.cameraDump;
+  };
+
+  window.__POYTARA_PROBE_DECK_LUM = function () {
+    /*
+      Palmrest ROI after composer. Prefer 2D drawImage (preserveDrawingBuffer)
+      because WebGL readPixels often returns empty with EffectComposer.
+      Image-space band: x 55–90%, y 62–90% (trackpad / front palmrest).
+    */
+    var el = renderer.domElement;
+    var w = el.width;
+    var h = el.height;
+    var c2 = document.createElement("canvas");
+    c2.width = w;
+    c2.height = h;
+    var ctx2 = c2.getContext("2d");
+    if (!ctx2) return { error: "no-2d" };
+    try {
+      ctx2.drawImage(el, 0, 0);
+    } catch (err) {
+      return { error: "drawImage", detail: String(err && err.message) };
+    }
+    var x0 = Math.floor(w * 0.55);
+    var x1 = Math.floor(w * 0.9);
+    var y0 = Math.floor(h * 0.62);
+    var y1 = Math.floor(h * 0.9);
+    var img = ctx2.getImageData(x0, y0, x1 - x0, y1 - y0);
+    var d = img.data;
+    var sum = 0;
+    var n = 0;
+    var vals = [];
+    var i;
+    for (i = 0; i < d.length; i += 4) {
+      var lum = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+      if (lum > 4 && lum < 95) {
+        sum += lum;
+        n += 1;
+        vals.push(lum);
+      }
+    }
+    vals.sort(function (a, b) { return a - b; });
+    function pct(p) {
+      if (!vals.length) return null;
+      return vals[Math.min(vals.length - 1, Math.floor(vals.length * p))];
+    }
+    var mean = n ? sum / n : null;
+    var out = {
+      mean: mean,
+      p50: pct(0.5),
+      p10: pct(0.1),
+      p90: pct(0.9),
+      n: n,
+      roi: [x0, y0, x1, y1],
+      target: [25, 35],
+      ok: mean != null && mean >= 25 && mean <= 35,
+      build: BUILD,
+    };
+    state.deckLumProbe = out;
+    return out;
   };
 
   window.__POYTARA_TRY_FLASH_CAM = function (distMul, elevMul) {
