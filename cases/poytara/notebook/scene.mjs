@@ -15,7 +15,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v022-20261117222110";
+var BUILD = "notebook-studio-v022-20261117222903";
 var CDN_TAG = "v0.2.2";
 
 var reduced =
@@ -535,6 +535,8 @@ function bindScreenTexture(root, figma) {
   var overlay = new THREE.Mesh(plane, mat);
   overlay.name = "screenOverlay";
   overlay.position.set((xmin + xmax) / 2, yAvg + 0.0015, (zmin + zmax) / 2);
+  /* Un-mirror horizontal after rotateY(π) so chrome sits top-left, text LTR */
+  overlay.scale.x = -1;
   overlay.renderOrder = 3;
   screenMesh.visible = false;
   /* Hide thick gray bezel/glass leftovers around the panel */
@@ -545,7 +547,7 @@ function bindScreenTexture(root, figma) {
     }
   });
   (screenMesh.parent || root).add(overlay);
-  state.stripeFix = "uv-roty-pi-flipY1-thin-bezel";
+  state.stripeFix = "uv-roty-pi-scalex-neg-thin-bezel";
   return overlay;
 }
 
