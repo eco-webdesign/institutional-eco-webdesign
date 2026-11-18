@@ -15,7 +15,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v022-20261117224142";
+var BUILD = "notebook-studio-v022-20261117224705";
 var CDN_TAG = "v0.2.2";
 
 var reduced =
@@ -525,7 +525,7 @@ function bindScreenTexture(root, figma) {
   var mat = new THREE.MeshBasicMaterial({
     map: figma.texture,
     toneMapped: false,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     transparent: true,
     opacity: 0,
   });
@@ -1154,7 +1154,7 @@ async function init() {
 
     var vFov = THREE.MathUtils.degToRad(camera.fov);
     /* Pull back: screen ~55% of viewport so chassis + trackpad breathe */
-    var fillH = isMobile ? 0.36 : 0.55;
+    var fillH = isMobile ? 0.32 : 0.55;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
     /* Screen mid a bit above center → top chrome ~8%, base/trackpad in lower third */
@@ -1344,11 +1344,15 @@ async function init() {
     /* Desktop: left black. Mobile: below notebook, no overlap with keyboard. */
     if (isMobile) {
       beatCopy.style.top = "auto";
-      beatCopy.style.bottom = "3%";
+      beatCopy.style.bottom = "2%";
       beatCopy.style.left = "6%";
       beatCopy.style.right = "6%";
       beatCopy.style.maxWidth = "88%";
       beatCopy.style.textAlign = "left";
+      if (titleEl) {
+        titleEl.style.fontSize = "1.45rem";
+        titleEl.style.marginBottom = "0.25rem";
+      }
     } else {
       beatCopy.style.top = "20%";
       beatCopy.style.bottom = "auto";
