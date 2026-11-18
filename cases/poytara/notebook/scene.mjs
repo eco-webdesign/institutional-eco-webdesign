@@ -3,16 +3,19 @@ import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exampl
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js/+esm";
 import { EffectComposer } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js/+esm";
 import { RenderPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/RenderPass.js/+esm";
-import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js/+esm";
+import { BokehPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/BokehPass.js/+esm";
 import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/OutputPass.js/+esm";
+import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js/+esm";
 
 /*
-  Poytara abertura — beats 0–3 (Tympanus macbook-only.glb).
-  Case mode: SEM orbit / drag / hover. Scroll lock até fim do beat 3.
-  Screen: CanvasTexture do HTML/CSS Figma (não vídeo); ClampToEdge (fix listras).
-  CSP no-blob: GLB sem Draco; texturas externas https (jsDelivr); sem DRACOLoader/workers.
-  Créditos: MIT repalash + CC-BY timblewee — vendor/tympanus/ATTRIBUTION.md
+  Poytara abertura estúdio v0.2.0 — beats 0–3 (automáticos no load).
+  Estúdio neutro escuro, wireframe→sólido no LoadingManager, DoF (BokehPass),
+  dolly de câmera, tampa com overshoot, env map (RoomEnvironment/PMREM), ACES.
+  CSP a=dr: sem blob:, sem workers, sem Draco. Créditos: ATTRIBUTION.md
 */
+
+var BUILD = "notebook-studio-v020-20261117212115";
+var CDN_TAG = "v0.2.0";
 
 var reduced =
   window.matchMedia &&
@@ -22,11 +25,13 @@ if (reduced) {
 }
 
 var openRoot = document.querySelector(".pyOpen");
-var canvas = document.getElementById("pyOpenCanvas") || document.getElementById("c");
+var canvas =
+  document.getElementById("pyOpenCanvas") || document.getElementById("c");
 var fallbackEl = document.getElementById("fallback");
 var statusEl = document.getElementById("statusLine");
 var focusVeil = document.getElementById("focusVeil");
-var beatCopy = document.querySelector(".pyOpen__copy") || document.getElementById("beatCopy");
+var beatCopy =
+  document.querySelector(".pyOpen__copy") || document.getElementById("beatCopy");
 var figmaScreen = document.getElementById("figmaScreen");
 
 var params = new URLSearchParams(window.location.search || "");
@@ -37,29 +42,25 @@ var captureHold = params.get("hold") === "1";
 var debugHud = params.get("debug") === "1";
 
 var slash = String.fromCharCode(47);
-var cdnTag = "v0.1.3";
-var cdnBase =
-  "https:" +
-  slash +
-  slash +
-  "cdn.jsdelivr.net" +
-  slash +
-  "gh" +
-  slash +
-  "eco-webdesign" +
-  slash +
-  "institutional-eco-webdesign@" +
-  cdnTag +
-  slash +
-  "cases" +
-  slash +
-  "poytara" +
-  slash +
-  "notebook" +
-  slash;
-var useCdn = true;
-var glbUrl = useCdn ? cdnBase + "macbook-only.glb" : "./vendor/tympanus/macbook-only.glb";
-var posesUrl = useCdn ? cdnBase + "lid-poses.json" : "./vendor/tympanus/lid-poses.json";
+var scriptEl =
+  document.currentScript ||
+  document.querySelector("script[data-eco-notebook]") ||
+  document.querySelector('script[type="module"][src*="poytara/notebook/scene"]');
+var scriptSrc = (scriptEl && scriptEl.src) || "";
+var cdnBase;
+if (scriptSrc.indexOf("cases/poytara/notebook/") >= 0) {
+  cdnBase = scriptSrc.replace(/scene\.mjs(\?.*)?$/, "");
+} else {
+  cdnBase =
+    "https:" +
+    slash +
+    slash +
+    "cdn.jsdelivr.net/gh/eco-webdesign/institutional-eco-webdesign@" +
+    CDN_TAG +
+    "/cases/poytara/notebook/";
+}
+var glbUrl = cdnBase + "macbook-only.glb";
+var posesUrl = cdnBase + "lid-poses.json";
 
 document.body.setAttribute("data-mode", mode);
 document.body.classList.toggle("is-debug", debugHud);
@@ -70,34 +71,19 @@ if (hudEl) {
 if (beatCopy) {
   beatCopy.dataset.pos = copyPos;
   beatCopy.hidden = false;
+  beatCopy.style.opacity = "0";
 }
 
-var cssMs = function (name, fallback) {
-  var raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  if (!raw) {
-    return fallback;
-  }
-  if (raw.endsWith("ms")) {
-    return parseFloat(raw);
-  }
-  if (raw.endsWith("s")) {
-    return parseFloat(raw) * 1000;
-  }
-  return fallback;
-};
+var isMobile = Math.min(window.innerWidth || 1440, window.innerHeight || 900) <= 430 ||
+  (window.innerWidth || 1440) <= 430;
 
-var TIMING = {
-  beat0: cssMs("--beat0-hold", 280),
-  enter: cssMs("--beat1-enter", 900),
-  lid: cssMs("--beat1-lid", 720),
-  sharp: cssMs("--beat1-sharp", 480),
-  figma: cssMs("--beat2-figma", 1400),
-  copy: cssMs("--beat3-copy", 560),
-};
+var TIMING = reduced
+  ? { beat0: 120, loadHold: 80, dissolve: 180, enter: 420, lid: 360, figma: 280, copy: 220 }
+  : { beat0: 420, loadHold: 200, dissolve: 900, enter: 2100, lid: 1400, figma: 1500, copy: 700 };
 
 var state = {
   webglOk: false,
-  bloomOk: false,
+  dofOk: false,
   postOk: false,
   gpuOffLikely: false,
   still: reduced || mode === "case",
@@ -113,6 +99,10 @@ var state = {
   glbPath: glbUrl,
   posesPath: posesUrl,
   debugHud: debugHud,
+  loadProgress: 0,
+  wireframe: true,
+  studio: "dark-dramatic",
+  build: BUILD,
 };
 
 function setStatus(msg) {
@@ -128,13 +118,12 @@ function setBeat(n) {
   setStatus(
     "beat " +
       n +
-      " · " +
+      " · studio · " +
       mode +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
-      (state.bloomOk ? " · bloom" : " · no-bloom") +
+      (state.dofOk ? " · dof" : " · no-dof") +
       (reduced ? " · reduced" : "") +
-      " · pos=" +
-      copyPos
+      (isMobile ? " · mobile" : "")
   );
 }
 
@@ -183,9 +172,39 @@ function showFallback(reason) {
   if (canvas) {
     canvas.style.display = "none";
   }
+  if (beatCopy) {
+    beatCopy.style.opacity = "1";
+  }
   setBeat(3);
   lockScroll(false);
   setStatus("fallback · " + reason + " · beat 3 static");
+}
+
+function easeOutExpo(t) {
+  return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+}
+
+function easeInOutExpo(t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  if (t < 0.5) {
+    return Math.pow(2, 20 * t - 10) / 2;
+  }
+  return (2 - Math.pow(2, -20 * t + 10)) / 2;
+}
+
+function easeOutBack(t) {
+  var c1 = 1.70158;
+  var c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function clamp01(t) {
+  return Math.max(0, Math.min(1, t));
 }
 
 function applyLidPose(bevels, poses, name) {
@@ -222,10 +241,6 @@ function lerpLid(bevels, fromPose, toPose, t) {
   var sa = new THREE.Vector3().fromArray(fromPose.scale);
   var sb = new THREE.Vector3().fromArray(toPose.scale);
   bevels.scale.lerpVectors(sa, sb, t);
-}
-
-function easeOutCubic(t) {
-  return 1 - Math.pow(1 - t, 3);
 }
 
 function stripPhones(root) {
@@ -271,7 +286,7 @@ function createFigmaTexture() {
   }
 
   function paintFrame(progress) {
-    var p = Math.max(0, Math.min(1, progress));
+    var p = clamp01(progress);
     ctx.clearRect(0, 0, w, h);
 
     ctx.fillStyle = "#2c2c2c";
@@ -331,7 +346,6 @@ function createFigmaTexture() {
     ctx.beginPath();
     ctx.rect(cx0 + 18, cy0 + 18, cw - 36, ch - 36);
     ctx.clip();
-    /* Solid workspace — no fine grid (moiré / false “listras” on 1920 soft-gpu). */
     ctx.fillStyle = "#2b2b2b";
     ctx.fillRect(cx0 + 18, cy0 + 18, cw - 36, ch - 36);
 
@@ -342,9 +356,9 @@ function createFigmaTexture() {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(ax, ay, aw, ah);
 
-    var layerA = Math.max(0, Math.min(1, (p - 0.08) / 0.25));
-    var layerB = Math.max(0, Math.min(1, (p - 0.2) / 0.25));
-    var layerC = Math.max(0, Math.min(1, (p - 0.34) / 0.25));
+    var layerA = clamp01((p - 0.08) / 0.25);
+    var layerB = clamp01((p - 0.2) / 0.25);
+    var layerC = clamp01((p - 0.34) / 0.25);
 
     ctx.globalAlpha = layerA;
     ctx.fillStyle = "#e8eef5";
@@ -367,7 +381,7 @@ function createFigmaTexture() {
     );
     ctx.globalAlpha = 1;
 
-    var curT = Math.max(0, Math.min(1, (p - 0.05) / 0.9));
+    var curT = clamp01((p - 0.05) / 0.9);
     var curX = ax + aw * (0.18 + curT * 0.54);
     var curY = ay + ah * (0.22 + curT * 0.46);
     ctx.save();
@@ -392,44 +406,12 @@ function createFigmaTexture() {
   return { texture: tex, paintFrame: paintFrame, canvas: paint };
 }
 
-function rewriteScreenUVs(mesh) {
-  var geo = mesh.geometry;
-  if (!geo || !geo.attributes || !geo.attributes.uv || !geo.attributes.position) {
-    return;
-  }
-  var uv = geo.attributes.uv;
-  var pos = geo.attributes.position;
-  var i;
-  var xmin = Infinity;
-  var xmax = -Infinity;
-  var zmin = Infinity;
-  var zmax = -Infinity;
-  for (i = 0; i < pos.count; i++) {
-    var x = pos.getX(i);
-    var z = pos.getZ(i);
-    if (x < xmin) xmin = x;
-    if (x > xmax) xmax = x;
-    if (z < zmin) zmin = z;
-    if (z > zmax) zmax = z;
-  }
-  var dx = Math.max(xmax - xmin, 1e-6);
-  var dz = Math.max(zmax - zmin, 1e-6);
-  for (i = 0; i < pos.count; i++) {
-    var u = (pos.getX(i) - xmin) / dx;
-    /* V inverted so canvas top (toolbar) sits at the top of the open lid. */
-    var v = 1 - (pos.getZ(i) - zmin) / dz;
-    uv.setXY(i, THREE.MathUtils.clamp(u, 0, 1), THREE.MathUtils.clamp(v, 0, 1));
-  }
-  uv.needsUpdate = true;
-}
-
 function bindScreenTexture(root, figma) {
   var screenMesh = root.getObjectByName("Object_7");
   if (!screenMesh) {
     return null;
   }
 
-  /* Glass/plastic lid meshes over the panel cause soft-gpu moiré on the right. */
   ["Object_4", "Object_6"].forEach(function (name) {
     var o = root.getObjectByName(name);
     if (o) {
@@ -437,7 +419,6 @@ function bindScreenTexture(root, figma) {
     }
   });
 
-  /* Replace Object_7 with a clean plane (exact 0–1 UVs) — kills atlas/REPEAT listras. */
   var posAttr = screenMesh.geometry.attributes.position;
   var xmin = Infinity;
   var xmax = -Infinity;
@@ -460,12 +441,13 @@ function bindScreenTexture(root, figma) {
   var pw = xmax - xmin;
   var ph = zmax - zmin;
   var plane = new THREE.PlaneGeometry(pw, ph, 1, 1);
-  /* PlaneGeometry is XY; lid screen is XZ → rotate into lid local space. */
   plane.rotateX(-Math.PI / 2);
   var mat = new THREE.MeshBasicMaterial({
     map: figma.texture,
     toneMapped: false,
     side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0,
   });
   figma.texture.wrapS = THREE.ClampToEdgeWrapping;
   figma.texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -483,13 +465,196 @@ function bindScreenTexture(root, figma) {
   return overlay;
 }
 
+function makeStudioFloor() {
+  var group = new THREE.Group();
+  group.name = "studioFloor";
+
+  var cyclorama = new THREE.Mesh(
+    new THREE.CylinderGeometry(18, 18, 14, 64, 1, true, 0, Math.PI),
+    new THREE.MeshStandardMaterial({
+      color: 0x12151c,
+      roughness: 0.92,
+      metalness: 0.05,
+      side: THREE.BackSide,
+    })
+  );
+  cyclorama.position.set(0, 5.5, -4);
+  cyclorama.rotation.y = Math.PI;
+  group.add(cyclorama);
+
+  var ground = new THREE.Mesh(
+    new THREE.CircleGeometry(16, 64),
+    new THREE.MeshStandardMaterial({
+      color: 0x0e1118,
+      roughness: 0.78,
+      metalness: 0.18,
+    })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.01;
+  ground.receiveShadow = true;
+  group.add(ground);
+
+  var contact = new THREE.Mesh(
+    new THREE.CircleGeometry(2.4, 48),
+    new THREE.ShadowMaterial({ opacity: 0.42 })
+  );
+  contact.rotation.x = -Math.PI / 2;
+  contact.position.y = 0.002;
+  contact.receiveShadow = true;
+  group.add(contact);
+
+  var floorWire = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.CircleGeometry(16, 48)),
+    new THREE.LineBasicMaterial({
+      color: 0xb7c4ff,
+      transparent: true,
+      opacity: 0.35,
+    })
+  );
+  floorWire.rotation.x = -Math.PI / 2;
+  floorWire.position.y = 0.004;
+  floorWire.name = "floorWire";
+  group.add(floorWire);
+
+  return { group: group, floorWire: floorWire, ground: ground, contact: contact };
+}
+
+function makePlaceholderWire() {
+  var g = new THREE.Group();
+  g.name = "placeholderWire";
+  var base = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(3.2, 0.12, 2.15)),
+    new THREE.LineBasicMaterial({
+      color: 0xdde6ff,
+      transparent: true,
+      opacity: 0.55,
+    })
+  );
+  base.position.y = 0.06;
+  var lid = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(3.05, 0.08, 2.0)),
+    new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.7,
+    })
+  );
+  lid.position.set(0, 0.2, -0.05);
+  g.add(base);
+  g.add(lid);
+  return g;
+}
+
+function captureSolidMaterials(root) {
+  var entries = [];
+  root.traverse(function (o) {
+    if (!o.isMesh || !o.material) {
+      return;
+    }
+    var mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach(function (m, idx) {
+      if (!m || m.name === "screenOverlayMat") {
+        return;
+      }
+      entries.push({
+        mesh: o,
+        index: idx,
+        isArray: Array.isArray(o.material),
+        solid: m,
+        wire: new THREE.MeshBasicMaterial({
+          color: 0xe8eeff,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+        }),
+      });
+    });
+  });
+  return entries;
+}
+
+function setWireframeMix(entries, wireAmount) {
+  var w = clamp01(wireAmount);
+  entries.forEach(function (e) {
+    var m = e.solid;
+    if (e.isArray) {
+      e.mesh.material[e.index] = m;
+    } else {
+      e.mesh.material = m;
+    }
+    if (!m.userData._studioInit) {
+      m.userData._studioInit = true;
+      m.userData._baseOpacity = m.opacity === undefined ? 1 : m.opacity;
+      m.userData._wasTransparent = !!m.transparent;
+      if (m.emissive) {
+        m.userData._baseEmissive = m.emissive.clone();
+      }
+    }
+    m.wireframe = w > 0.28;
+    if (m.emissive) {
+      var glow = 0.55 * w;
+      m.emissive.setRGB(
+        (m.userData._baseEmissive.r || 0) + glow * 0.75,
+        (m.userData._baseEmissive.g || 0) + glow * 0.85,
+        (m.userData._baseEmissive.b || 0) + glow
+      );
+    }
+    if (w > 0.02) {
+      m.transparent = true;
+      m.opacity =
+        m.userData._baseOpacity *
+        (m.wireframe ? 0.35 + 0.55 * Math.max(state.loadProgress, 0.2) : 1 - w * 0.35);
+    } else {
+      m.transparent = m.userData._wasTransparent;
+      m.opacity = m.userData._baseOpacity;
+      m.wireframe = false;
+      if (m.emissive && m.userData._baseEmissive) {
+        m.emissive.copy(m.userData._baseEmissive);
+      }
+    }
+    m.needsUpdate = true;
+  });
+  state.wireframe = w > 0.05;
+}
+
+function scrambleText(el, finalText, progress) {
+  if (!el) {
+    return;
+  }
+  var p = clamp01(progress);
+  if (p >= 1) {
+    el.textContent = finalText;
+    return;
+  }
+  var glyphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  var out = "";
+  for (var i = 0; i < finalText.length; i++) {
+    var ch = finalText.charAt(i);
+    if (ch === " " || ch === "." || ch === ",") {
+      out += ch;
+      continue;
+    }
+    if (i / Math.max(finalText.length, 1) < p) {
+      out += ch;
+    } else {
+      out += glyphs.charAt((Math.random() * glyphs.length) | 0);
+    }
+  }
+  el.textContent = out;
+}
+
 async function init() {
   lockScroll(true);
   setBeat(0);
 
-  if (reduced) {
+  if (reduced && params.get("force3d") !== "1") {
     showFallback("reduced-motion");
     document.body.classList.add("is-figma-live");
+    if (openRoot) {
+      openRoot.classList.add("is-hold", "is-ready", "is-beat3");
+    }
     return;
   }
 
@@ -502,7 +667,7 @@ async function init() {
   try {
     renderer = new THREE.WebGLRenderer({
       canvas: canvas,
-      antialias: true,
+      antialias: !isMobile,
       alpha: false,
       powerPreference: "high-performance",
       failIfMajorPerformanceCaveat: false,
@@ -529,58 +694,92 @@ async function init() {
   state.webglOk = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.12;
   renderer.shadowMap.enabled = !state.gpuOffLikely;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.setClearColor(0xf3f5f7, 1);
+  renderer.setClearColor(0x07090e, 1);
 
   var scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0xf3f5f7, 32, 96);
+  scene.background = new THREE.Color(0x07090e);
+  scene.fog = new THREE.FogExp2(0x07090e, 0.028);
 
-  var camera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
-  camera.position.set(5.6, 3.4, 6.8);
+  var camera = new THREE.PerspectiveCamera(30, 1, 0.05, 200);
+  camera.position.set(6.4, 3.8, 7.6);
 
-  var hemi = new THREE.HemisphereLight(0xf4f6fa, 0x8a93a3, 0.55);
+  try {
+    var pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    var envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = envTex;
+    scene.environmentIntensity = 0.55;
+    pmrem.dispose();
+  } catch (err) {
+    setStatus("env-map skipped");
+  }
+
+  var hemi = new THREE.HemisphereLight(0x9eb6ff, 0x0a0c12, 0.28);
   scene.add(hemi);
 
-  var key = new THREE.DirectionalLight(0xffffff, 2.4);
-  key.position.set(4.5, 8, 3.5);
+  var key = new THREE.DirectionalLight(0xfff2e0, 2.8);
+  key.position.set(5.2, 9.2, 4.2);
   key.castShadow = !state.gpuOffLikely;
   if (key.castShadow) {
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
     key.shadow.camera.near = 0.5;
     key.shadow.camera.far = 40;
     key.shadow.camera.left = -8;
     key.shadow.camera.right = 8;
     key.shadow.camera.top = 8;
     key.shadow.camera.bottom = -8;
-    key.shadow.bias = -0.0004;
+    key.shadow.bias = -0.00035;
     key.shadow.normalBias = 0.02;
-    key.shadow.radius = 2.5;
+    key.shadow.radius = 2.2;
   }
   scene.add(key);
 
-  var fill = new THREE.DirectionalLight(0xc5d6ff, 0.85);
-  fill.position.set(-6, 2.5, 2);
-  scene.add(fill);
-  var rim = new THREE.DirectionalLight(0xffffff, 1.35);
-  rim.position.set(-2, 4, -6);
+  var rim = new THREE.DirectionalLight(0x9ec5ff, 1.8);
+  rim.position.set(-5.5, 4.5, -6.5);
   scene.add(rim);
-  var front = new THREE.DirectionalLight(0xffffff, 0.35);
-  front.position.set(1.5, 2, 7);
-  scene.add(front);
 
-  var floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2),
-    new THREE.ShadowMaterial({ opacity: 0.22 })
-  );
-  floor.position.y = -0.02;
-  floor.receiveShadow = true;
-  scene.add(floor);
+  var fill = new THREE.DirectionalLight(0x6f87c8, 0.45);
+  fill.position.set(-3.5, 2.2, 5.5);
+  scene.add(fill);
 
-  setStatus("loading glb…");
+  var studio = makeStudioFloor();
+  scene.add(studio.group);
 
-  var poses;
+  var placeholder = makePlaceholderWire();
+  scene.add(placeholder);
+
+  if (focusVeil) {
+    focusVeil.classList.remove("is-blur");
+    focusVeil.hidden = true;
+  }
+
+  setStatus("loading studio assets…");
+
+  var loadProgress = 0;
+  var loadDone = false;
+  var manager = new THREE.LoadingManager();
+  manager.onProgress = function (_url, loaded, total) {
+    loadProgress = total > 0 ? loaded / total : 0;
+    state.loadProgress = loadProgress;
+    if (studio.floorWire && studio.floorWire.material) {
+      studio.floorWire.material.opacity = 0.15 + 0.55 * loadProgress;
+    }
+    placeholder.children.forEach(function (line) {
+      if (line.material) {
+        line.material.opacity = 0.25 + 0.55 * loadProgress;
+      }
+    });
+    setStatus("loading " + Math.round(loadProgress * 100) + "%");
+  };
+  manager.onLoad = function () {
+    loadDone = true;
+    state.loadProgress = 1;
+  };
+
+  var poses = null;
   try {
     var posesRes = await fetch(posesUrl);
     poses = await posesRes.json();
@@ -592,19 +791,12 @@ async function init() {
   var openPose = null;
   if (poses && poses.transforms) {
     poses.transforms.forEach(function (p) {
-      if (p.name === "closed") {
-        closedPose = p;
-      }
-      if (p.name === "open") {
-        openPose = p;
-      }
+      if (p.name === "closed") closedPose = p;
+      if (p.name === "open") openPose = p;
     });
   }
 
-  /* CSP App/Render: sem Draco/workers/blob. GLB v0.1.3 + texturas https no mesmo path.
-     ImageBitmapLoader/TextureLoader fazem fetch https (connect-src https:). Sem blob:. */
-  var loader = new GLTFLoader();
-
+  var loader = new GLTFLoader(manager);
   var gltf;
   try {
     gltf = await loader.loadAsync(glbUrl);
@@ -620,16 +812,14 @@ async function init() {
   var macbook = root.getObjectByName("macbook") || root;
   macbook.position.set(0, 0, 0);
   macbook.rotation.set(0, 0, 0);
-  macbook.visible = false;
 
   var bevels = root.getObjectByName("Bevels_2");
   applyLidPose(bevels, poses, "closed");
   state.lidPose = "closed";
 
   var figma = createFigmaTexture();
-  bindScreenTexture(root, figma);
+  var screenOverlay = bindScreenTexture(root, figma);
   if (figmaScreen) {
-    /* HTML/CSS source kept for tokens + future press-release swap */
     document.body.classList.remove("is-figma-live");
   }
 
@@ -640,15 +830,25 @@ async function init() {
       if (o.material) {
         var mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach(function (m) {
-          if (m && m.map && m.map !== figma.texture) {
+          if (!m) return;
+          if (m.map && m.map !== figma.texture) {
             m.map.colorSpace = THREE.SRGBColorSpace;
+          }
+          if (m.metalness !== undefined) {
+            m.envMapIntensity = 1.15;
+            m.metalness = Math.min(1, (m.metalness || 0) + 0.08);
+            m.roughness = Math.max(0.18, (m.roughness || 0.45) * 0.92);
           }
         });
       }
     }
   });
 
+  var matEntries = captureSolidMaterials(root);
+  setWireframeMix(matEntries, 1);
+
   scene.add(root);
+  placeholder.visible = false;
 
   var box = new THREE.Box3().setFromObject(macbook);
   var center = box.getCenter(new THREE.Vector3());
@@ -656,7 +856,6 @@ async function init() {
   macbook.position.sub(center);
   macbook.position.y += size.y * 0.42;
 
-  /* Measure framing with lid OPEN so beat 3 does not crop the tampa at 1920. */
   applyLidPose(bevels, poses, "open");
   box.setFromObject(macbook);
   size = box.getSize(new THREE.Vector3());
@@ -699,21 +898,23 @@ async function init() {
 
   var nearDist = frameCamera(1);
   camNear.copy(camera.position);
-  frameCamera(1.62);
+  frameCamera(1.78);
   camFar.copy(camera.position);
   camera.position.copy(camFar);
 
   var composer = null;
-  var bloomPass = null;
-  var forceBloom = params.get("forceBloom") === "1";
-  var forceNoBloom = params.get("bloom") === "0";
-  var usePost =
-    !reduced && !forceNoBloom && (forceBloom || !state.gpuOffLikely);
+  var bokehPass = null;
+  var useDof =
+    !reduced &&
+    !isMobile &&
+    !state.gpuOffLikely &&
+    params.get("dof") !== "0";
 
   function resize() {
     var w = canvas.clientWidth || window.innerWidth;
     var h = canvas.clientHeight || window.innerHeight;
-    var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    isMobile = w <= 430;
+    var dpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.5);
     camera.aspect = w / Math.max(h, 1);
     camera.updateProjectionMatrix();
     renderer.setPixelRatio(dpr);
@@ -721,35 +922,41 @@ async function init() {
     if (composer) {
       composer.setPixelRatio(dpr);
       composer.setSize(w, h);
-      if (bloomPass) {
-        bloomPass.resolution.set(w, h);
-      }
+    }
+    if (bokehPass && bokehPass.uniforms && bokehPass.uniforms.aspect) {
+      bokehPass.uniforms.aspect.value = camera.aspect;
     }
   }
 
-  if (usePost) {
+  if (useDof) {
     try {
       composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.14,
-        0.42,
-        0.9
-      );
-      composer.addPass(bloomPass);
+      bokehPass = new BokehPass(scene, camera, {
+        focus: nearDist * 0.92,
+        aperture: 0.00022,
+        maxblur: 0.012,
+      });
+      composer.addPass(bokehPass);
       composer.addPass(new OutputPass());
       state.postOk = true;
-      state.bloomOk = true;
+      state.dofOk = true;
     } catch (err) {
       composer = null;
+      bokehPass = null;
       state.postOk = false;
-      state.bloomOk = false;
+      state.dofOk = false;
     }
   }
 
   resize();
   window.addEventListener("resize", resize);
+
+  var titleEl = beatCopy && beatCopy.querySelector(".pyOpen__title");
+  var hintEl = beatCopy && beatCopy.querySelector(".pyOpen__hint");
+  var titleFinal = (titleEl && titleEl.textContent) || "Poytara";
+  var hintFinal =
+    (hintEl && hintEl.textContent) || "Use o scroll para ver o case";
 
   var timeline = {
     start: 0,
@@ -757,22 +964,42 @@ async function init() {
     done: false,
     lastBeat: -1,
     figmaP: 0,
+    assetsReadyAt: 0,
+    copyShown: false,
   };
 
-  var T0 = TIMING.beat0;
-  var T1 = T0 + TIMING.enter;
-  var T_LID0 = T0 + TIMING.enter * 0.45;
+  var T_BEAT0 = TIMING.beat0;
+  var T_DIS0 = T_BEAT0 + TIMING.loadHold;
+  var T_DIS1 = T_DIS0 + TIMING.dissolve;
+  var T_ENTER0 = T_DIS0;
+  var T_ENTER1 = T_ENTER0 + TIMING.enter;
+  var T_LID0 = T_ENTER0 + TIMING.enter * 0.42;
   var T_LID1 = T_LID0 + TIMING.lid;
-  var T_FIG0 = T_LID0 + TIMING.lid * 0.4;
+  var T_FIG0 = T_LID0 + TIMING.lid * 0.72;
   var T_FIG1 = T_FIG0 + TIMING.figma;
-  var T3 = Math.max(T_LID1, T_FIG1) + TIMING.copy * 0.35;
+  var T_COPY0 = Math.max(T_LID1, T_FIG1) + 80;
+  var T_COPY1 = T_COPY0 + TIMING.copy;
+  var T_DONE = T_COPY1 + 120;
+
+  function setDof(progressSharp) {
+    if (!bokehPass || !bokehPass.uniforms) {
+      return;
+    }
+    var p = clamp01(progressSharp);
+    var maxBlur = reduced ? 0 : THREE.MathUtils.lerp(0.018, 0.0012, easeOutExpo(p));
+    var aperture = THREE.MathUtils.lerp(0.00055, 0.00008, easeOutExpo(p));
+    bokehPass.uniforms.maxblur.value = maxBlur;
+    bokehPass.uniforms.aperture.value = aperture;
+    bokehPass.uniforms.focus.value = nearDist * THREE.MathUtils.lerp(1.35, 0.92, easeOutExpo(p));
+    bokehPass.enabled = maxBlur > 0.0015;
+  }
 
   function renderFrame() {
-    if (composer && state.bloomOk) {
+    if (composer && state.dofOk) {
       try {
         composer.render();
       } catch (err) {
-        state.bloomOk = false;
+        state.dofOk = false;
         composer = null;
         renderer.render(scene, camera);
       }
@@ -782,30 +1009,35 @@ async function init() {
   }
 
   function jumpToBeat(n) {
-    macbook.visible = n >= 1;
+    placeholder.visible = false;
+    setWireframeMix(matEntries, 0);
+    if (studio.floorWire) studio.floorWire.visible = false;
     if (n >= 1) {
       camera.position.copy(camNear);
       camera.lookAt(camTarget);
+      setDof(1);
     } else {
       camera.position.copy(camFar);
       camera.lookAt(camTarget);
+      setDof(0);
     }
     if (n >= 2) {
       applyLidPose(bevels, poses, "open");
       state.lidPose = "open";
       document.body.classList.add("is-figma-live");
       figma.paintFrame(1);
+      if (screenOverlay) screenOverlay.material.opacity = 1;
       timeline.figmaP = 1;
-    } else if (n === 1) {
-      applyLidPose(bevels, poses, "closed");
-      figma.paintFrame(0);
-      timeline.figmaP = 0;
     } else {
       applyLidPose(bevels, poses, "closed");
       figma.paintFrame(0);
+      if (screenOverlay) screenOverlay.material.opacity = 0;
+      timeline.figmaP = 0;
     }
-    if (focusVeil) {
-      focusVeil.classList.toggle("is-blur", n === 1);
+    if (n >= 3 && beatCopy) {
+      beatCopy.style.opacity = "1";
+      if (titleEl) titleEl.textContent = titleFinal;
+      if (hintEl) hintEl.textContent = hintFinal;
     }
     setBeat(n);
     timeline.lastBeat = n;
@@ -821,74 +1053,108 @@ async function init() {
   }
 
   function applyTimeline(elapsed) {
-    var beat = 0;
-    if (elapsed >= T3) {
-      beat = 3;
-    } else if (elapsed >= T_FIG0) {
-      beat = 2;
-    } else if (elapsed >= T0) {
-      beat = 1;
+    var readyGate = loadDone || state.loadProgress >= 0.99;
+    if (!readyGate) {
+      setBeat(0);
+      setWireframeMix(matEntries, 1);
+      camera.position.copy(camFar);
+      camera.lookAt(camTarget);
+      setDof(0);
+      return;
     }
+    if (!timeline.assetsReadyAt) {
+      timeline.assetsReadyAt = elapsed;
+    }
+    var t = Math.max(0, elapsed - timeline.assetsReadyAt);
 
+    var beat = 0;
+    if (t >= T_DONE) beat = 3;
+    else if (t >= T_FIG0) beat = 2;
+    else if (t >= T_ENTER0) beat = 1;
     if (beat !== timeline.lastBeat) {
       setBeat(beat);
       timeline.lastBeat = beat;
     }
 
-    if (elapsed < T0) {
-      macbook.visible = false;
+    if (t < T_BEAT0) {
+      setWireframeMix(matEntries, 1);
       camera.position.copy(camFar);
       camera.lookAt(camTarget);
-      if (focusVeil) {
-        focusVeil.classList.remove("is-blur");
-      }
+      setDof(0);
       return;
     }
 
-    macbook.visible = true;
+    /* Wireframe dissolve → solid */
+    var dissolveT = clamp01((t - T_DIS0) / Math.max(TIMING.dissolve, 1));
+    setWireframeMix(matEntries, 1 - easeOutExpo(dissolveT));
+    if (studio.floorWire) {
+      studio.floorWire.material.opacity = Math.max(0, 0.4 * (1 - easeOutExpo(dissolveT)));
+      studio.floorWire.visible = dissolveT < 0.98;
+    }
 
-    if (elapsed < T1) {
-      var te = Math.min(1, (elapsed - T0) / TIMING.enter);
-      camera.position.lerpVectors(camFar, camNear, easeOutCubic(te));
+    /* Camera dolly (never scale model) + focus pull */
+    if (t < T_ENTER1) {
+      var te = clamp01((t - T_ENTER0) / TIMING.enter);
+      var teE = easeInOutExpo(te);
+      camera.position.lerpVectors(camFar, camNear, teE);
       camera.lookAt(camTarget);
-      if (focusVeil) {
-        focusVeil.classList.toggle("is-blur", te < 0.85);
-      }
+      setDof(teE);
     } else {
       camera.position.copy(camNear);
       camera.lookAt(camTarget);
-      if (focusVeil) {
-        focusVeil.classList.remove("is-blur");
-      }
+      setDof(1);
     }
 
-    if (elapsed < T_LID0) {
+    /* Lid with weight + overshoot/settle */
+    if (t < T_LID0) {
       applyLidPose(bevels, poses, "closed");
       state.lidPose = "closed";
-    } else if (elapsed < T_LID1) {
-      var tl = Math.min(1, (elapsed - T_LID0) / TIMING.lid);
-      lerpLid(bevels, closedPose, openPose, easeOutCubic(tl));
+    } else if (t < T_LID1) {
+      var tl = clamp01((t - T_LID0) / TIMING.lid);
+      /* easeOutBack overshoots ligeiramente acima de 1, depois assenta em 1 */
+      var lidE = easeOutBack(tl);
+      lerpLid(bevels, closedPose, openPose, lidE);
       state.lidPose = "opening";
     } else {
       applyLidPose(bevels, poses, "open");
       state.lidPose = "open";
     }
 
-    if (elapsed >= T_FIG0) {
+    /* Figma only after lid mostly open */
+    if (t >= T_FIG0) {
       document.body.classList.add("is-figma-live");
-      var tf = Math.min(1, (elapsed - T_FIG0) / TIMING.figma);
+      var tf = clamp01((t - T_FIG0) / TIMING.figma);
       timeline.figmaP = easeOutCubic(tf);
       figma.paintFrame(timeline.figmaP);
+      if (screenOverlay) {
+        screenOverlay.material.opacity = timeline.figmaP;
+      }
     } else {
       figma.paintFrame(0);
       timeline.figmaP = 0;
+      if (screenOverlay) screenOverlay.material.opacity = 0;
     }
 
-    if (elapsed >= T3 && !timeline.done) {
+    /* External info last */
+    if (t >= T_COPY0 && beatCopy) {
+      var tc = clamp01((t - T_COPY0) / TIMING.copy);
+      beatCopy.style.opacity = String(easeOutExpo(tc));
+      scrambleText(titleEl, titleFinal, tc);
+      scrambleText(hintEl, hintFinal, Math.max(0, tc - 0.15));
+      timeline.copyShown = true;
+    }
+
+    if (t >= T_DONE && !timeline.done) {
       timeline.done = true;
       lockScroll(false);
       figma.paintFrame(1);
       timeline.figmaP = 1;
+      if (screenOverlay) screenOverlay.material.opacity = 1;
+      if (beatCopy) {
+        beatCopy.style.opacity = "1";
+        if (titleEl) titleEl.textContent = titleFinal;
+        if (hintEl) hintEl.textContent = hintFinal;
+      }
       if (openRoot) {
         openRoot.classList.remove("is-intro", "is-anim");
         openRoot.classList.add("is-hold", "is-ready", "is-beat3");
@@ -897,7 +1163,22 @@ async function init() {
       if (window.__ecoCaseLenis && window.__ecoCaseLenis.start) {
         window.__ecoCaseLenis.start();
       }
+      setBeat(3);
     }
+  }
+
+  function idleDrift(now) {
+    if (reduced || mode === "orbit" || !timeline.done) {
+      return;
+    }
+    var s = Math.sin(now * 0.00045) * 0.035;
+    var c = Math.cos(now * 0.00032) * 0.022;
+    camera.position.set(
+      camNear.x + s,
+      camNear.y + c * 0.6,
+      camNear.z + c
+    );
+    camera.lookAt(camTarget);
   }
 
   function frame(now) {
@@ -913,7 +1194,7 @@ async function init() {
     if (!forced && !timeline.done) {
       applyTimeline(now - timeline.start);
     } else if (!forced && timeline.done) {
-      /* hold beat 3 — keep final paint */
+      idleDrift(now);
     }
     renderFrame();
     requestAnimationFrame(frame);
@@ -932,15 +1213,18 @@ async function init() {
     openRoot.classList.remove("is-anim");
   }
   window.__ecoPoytaraNotebook = Object.assign({}, window.__ecoPoytaraNotebook || {}, {
-    build: "notebook-jsdfix-20261117165252",
+    build: BUILD,
     mode: "three",
     glb: glbUrl,
+    studio: "dark-dramatic",
+    tag: CDN_TAG,
   });
+  window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · case beats · stripeFix=" +
+    "ready · studio v0.2.0 · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
-      (state.bloomOk ? " · bloom" : " · no-bloom")
+      (state.dofOk ? " · dof" : " · no-dof")
   );
 }
 
