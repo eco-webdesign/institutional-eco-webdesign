@@ -14,7 +14,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v024-20261117232546";
+var BUILD = "notebook-studio-v024-20261117233210";
 var CDN_TAG = "v0.2.4";
 
 var reduced =
@@ -321,17 +321,25 @@ function createFigmaTexture() {
     ctx.clearRect(0, 0, w, h);
     ctx.setTransform(w / lw, 0, 0, h / lh, 0, 0);
 
-    /* Thin MacBook glass bezel — pure black frame that always reads */
+    /* Thin MacBook glass bezel — black sides/top; aluminum chin at bottom */
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, lw, lh);
     var inset = 14;
+    var chinH = 22;
     ctx.fillStyle = "#0e0e10";
-    ctx.fillRect(inset, inset, lw - inset * 2, lh - inset * 2);
+    ctx.fillRect(inset, inset, lw - inset * 2, lh - inset * 2 - chinH);
+    /* Visible chin / hinge bridge */
+    var chinGrad = ctx.createLinearGradient(0, lh - chinH - inset, 0, lh);
+    chinGrad.addColorStop(0, "#1c222c");
+    chinGrad.addColorStop(0.55, "#2a3340");
+    chinGrad.addColorStop(1, "#12151a");
+    ctx.fillStyle = chinGrad;
+    ctx.fillRect(inset - 2, lh - chinH - 4, lw - inset * 2 + 4, chinH + 4);
 
     var ox = inset;
     var oy = inset;
     var iw = lw - inset * 2;
-    var ih = lh - inset * 2;
+    var ih = lh - inset * 2 - chinH;
 
     /* Figma chrome */
     ctx.fillStyle = "#2c2c2c";
@@ -1205,11 +1213,11 @@ async function init() {
       })
     );
     screenFlashPlane.name = "screenFlashPlane";
-    screenFlashPlane.position.copy(screenOverlay.position);
-    screenFlashPlane.position.y += 0.002;
-    screenFlashPlane.rotation.copy(screenOverlay.rotation);
+    /* Child of overlay → tracks lid open; slight lift along local normal */
+    screenFlashPlane.position.set(0, 0.003, 0);
+    screenFlashPlane.scale.set(0.92, 0.92, 0.92);
     screenFlashPlane.renderOrder = 4;
-    screenOverlay.parent.add(screenFlashPlane);
+    screenOverlay.add(screenFlashPlane);
   }
   if (figmaScreen) {
     document.body.classList.remove("is-figma-live");
@@ -1328,10 +1336,10 @@ async function init() {
       Desktop: screen ~52% tall → moldura ~8%, base tela ~80%, trackpad ~88–90%.
       Mobile: smaller/higher notebook (upper/mid), full-ish screen, room for copy below.
     */
-    var fillH = isMobile ? 0.26 : 0.48;
+    var fillH = isMobile ? 0.24 : 0.48;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? 0.48 : 0.22;
+    var ndcY = isMobile ? 0.52 : 0.22;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
@@ -1735,22 +1743,24 @@ async function init() {
         screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(1, bloomFlash * 1.35) : 0;
         screenFlashPlane.visible = bloomFlash > 0.02;
       }
-      /* Soft keyboard kiss only — short range, no floor spill */
-      if (screenOverlay) {
+      /* During flash: NO bounce light (it was specular-blooming the floor).
+         After flash: soft keyboard kiss only. */
+      if (bloomFlash > 0.05) {
+        screenBounce.intensity = 0;
+      } else if (screenOverlay) {
         var sp = new THREE.Vector3();
         screenOverlay.getWorldPosition(sp);
         var sn = new THREE.Vector3(0, 1, 0);
         sn.transformDirection(screenOverlay.matrixWorld).normalize();
         if (sn.dot(camera.position.clone().sub(sp)) < 0) sn.negate();
-        screenBounce.position.copy(sp).addScaledVector(sn, 0.05);
-        screenBounce.target.position.set(sp.x * 0.05, 0.22, sp.z * 0.2);
+        screenBounce.position.copy(sp).addScaledVector(sn, 0.06);
+        screenBounce.target.position.set(sp.x * 0.05, 0.2, sp.z * 0.15);
         screenBounce.target.updateMatrixWorld();
+        screenBounce.intensity = 2.6 * timeline.figmaP;
+        screenBounce.distance = 4.0;
+        screenBounce.angle = Math.PI / 12;
+        screenBounce.decay = 1.9;
       }
-      /* Cap bounce: high intensity was specular-blooming the floor ellipse */
-      screenBounce.intensity = 2.2 * timeline.figmaP + bloomFlash * 2.4;
-      screenBounce.distance = bloomFlash > 0.05 ? 2.4 : 4.2;
-      screenBounce.angle = bloomFlash > 0.05 ? Math.PI / 16 : Math.PI / 11;
-      screenBounce.decay = bloomFlash > 0.05 ? 2.4 : 1.9;
     } else {
       figma.paintFrame(0);
       timeline.figmaP = 0;
@@ -1761,47 +1771,35 @@ async function init() {
       }
       screenBounce.intensity = 0;
     }
-    /* Mute EVERY floor light contributor during flash (glow + specular metal) */
+    /* Mute floor entirely during flash — no specular ellipse, no glow cone */
     if (studio.glow) {
       studio.glow.visible = false;
       studio.glow.material.opacity = 0;
     }
-    if (studio.contact && studio.contact.material) {
-      studio.contact.material.opacity = bloomFlash > 0.04 ? 0.08 : 0.38;
+    if (studio.contact) {
+      studio.contact.visible = bloomFlash <= 0.04;
+      if (studio.contact.material) studio.contact.material.opacity = 0.38;
     }
-    if (studio.ground && studio.ground.material) {
-      if (!studio.ground.userData._flashBase) {
-        studio.ground.userData._flashBase = {
-          metalness: studio.ground.material.metalness,
-          roughness: studio.ground.material.roughness,
-          clearcoat: studio.ground.material.clearcoat,
-          envMapIntensity: studio.ground.material.envMapIntensity,
-        };
-      }
-      var fb = studio.ground.userData._flashBase;
+    if (studio.ground) {
       if (bloomFlash > 0.04) {
-        studio.ground.material.metalness = 0.05;
-        studio.ground.material.roughness = 0.92;
-        studio.ground.material.clearcoat = 0;
-        studio.ground.material.envMapIntensity = 0.05;
+        studio.ground.visible = false;
       } else {
-        studio.ground.material.metalness = fb.metalness;
-        studio.ground.material.roughness = fb.roughness;
-        studio.ground.material.clearcoat = fb.clearcoat;
-        studio.ground.material.envMapIntensity = fb.envMapIntensity;
+        studio.ground.visible = true;
         if (studio.glow) {
           studio.glow.visible = true;
-          studio.glow.material.opacity = 0.03 + 0.02 * timeline.figmaP;
+          studio.glow.material.opacity = 0.025 + 0.015 * timeline.figmaP;
         }
       }
     }
-    /* Brief rim punch so lid edge reads during the flash beat */
-    if (typeof rimLid !== "undefined" && rimLid) {
-      rimLid.intensity = bloomFlash > 0.05 ? 5.5 : 3.2;
+    if (studio.floorWire) {
+      if (bloomFlash > 0.04) studio.floorWire.visible = false;
     }
-    if (typeof rim !== "undefined" && rim) {
-      rim.intensity = bloomFlash > 0.05 ? 6.5 : 5.2;
-    }
+    /* Dim key fill during flash so left floor cone dies; punch rim on lid */
+    key.intensity = bloomFlash > 0.05 ? 0.12 : 0.55;
+    fill.intensity = bloomFlash > 0.05 ? 0.04 : 0.18;
+    rimLid.intensity = bloomFlash > 0.05 ? 6.2 : 3.2;
+    rim.intensity = bloomFlash > 0.05 ? 7.0 : 5.2;
+    rimHinge.intensity = bloomFlash > 0.05 ? 5.0 : 3.8;
     /* ~0.45–0.55s decay at 60fps */
     bloomFlash *= 0.88;
 
