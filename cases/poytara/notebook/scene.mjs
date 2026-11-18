@@ -14,7 +14,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v024-20261117231835";
+var BUILD = "notebook-studio-v024-20261117232546";
 var CDN_TAG = "v0.2.4";
 
 var reduced =
@@ -572,20 +572,40 @@ function bindScreenTexture(root, figma) {
 
   /* Extra black chin strip under panel so screen never floats */
   var chin = new THREE.Mesh(
-    new THREE.PlaneGeometry(pw * 1.02, ph * 0.08),
+    new THREE.BoxGeometry(pw * 1.04, 0.012, ph * 0.14),
     new THREE.MeshStandardMaterial({
-      color: 0x050506,
-      metalness: 0.85,
-      roughness: 0.4,
-      emissive: new THREE.Color(0x10141c),
-      emissiveIntensity: 0.18,
+      color: 0x1a1e28,
+      metalness: 0.9,
+      roughness: 0.32,
+      emissive: new THREE.Color(0x2a3344),
+      emissiveIntensity: 0.45,
     })
   );
   chin.name = "screenChin";
-  chin.rotation.x = -Math.PI / 2;
-  chin.position.set((xmin + xmax) / 2, yAvg + 0.0008, zmin - ph * 0.02);
+  chin.position.set((xmin + xmax) / 2, yAvg - 0.004, zmin + ph * 0.02);
   chin.renderOrder = 2;
   (screenMesh.parent || root).add(chin);
+
+  /* Side rails of the lid so moldura reads against void */
+  var railMat = new THREE.MeshStandardMaterial({
+    color: 0x2a303c,
+    metalness: 0.95,
+    roughness: 0.28,
+    emissive: new THREE.Color(0x3a4558),
+    emissiveIntensity: 0.55,
+  });
+  var railL = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.02, 0.01, ph * 1.02), railMat);
+  railL.name = "screenRailL";
+  railL.position.set(xmin - pw * 0.005, yAvg + 0.001, (zmin + zmax) / 2);
+  var railR = railL.clone();
+  railR.name = "screenRailR";
+  railR.position.x = xmax + pw * 0.005;
+  var railT = new THREE.Mesh(new THREE.BoxGeometry(pw * 1.04, 0.01, ph * 0.03), railMat.clone());
+  railT.name = "screenRailT";
+  railT.position.set((xmin + xmax) / 2, yAvg + 0.001, zmax + ph * 0.01);
+  (screenMesh.parent || root).add(railL);
+  (screenMesh.parent || root).add(railR);
+  (screenMesh.parent || root).add(railT);
 
   (screenMesh.parent || root).add(overlay);
   state.stripeFix = "uv-roty-pi-chin-bezel-v024";
@@ -1171,6 +1191,26 @@ async function init() {
 
   var figma = createFigmaTexture();
   var screenOverlay = bindScreenTexture(root, figma);
+  var screenFlashPlane = null;
+  if (screenOverlay) {
+    screenFlashPlane = new THREE.Mesh(
+      screenOverlay.geometry.clone(),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0,
+        toneMapped: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+    );
+    screenFlashPlane.name = "screenFlashPlane";
+    screenFlashPlane.position.copy(screenOverlay.position);
+    screenFlashPlane.position.y += 0.002;
+    screenFlashPlane.rotation.copy(screenOverlay.rotation);
+    screenFlashPlane.renderOrder = 4;
+    screenOverlay.parent.add(screenFlashPlane);
+  }
   if (figmaScreen) {
     document.body.classList.remove("is-figma-live");
   }
@@ -1288,16 +1328,16 @@ async function init() {
       Desktop: screen ~52% tall → moldura ~8%, base tela ~80%, trackpad ~88–90%.
       Mobile: smaller/higher notebook (upper/mid), full-ish screen, room for copy below.
     */
-    var fillH = isMobile ? 0.30 : 0.52;
+    var fillH = isMobile ? 0.26 : 0.48;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? 0.42 : 0.20;
+    var ndcY = isMobile ? 0.48 : 0.22;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
-      camFaceTarget.copy(center).addScaledVector(screenUp, -vertShift * 0.12);
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.08);
-      camFace.addScaledVector(screenUp, faceDist * 0.08);
+      camFaceTarget.copy(center).addScaledVector(screenUp, -vertShift * 0.08);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.12);
+      camFace.addScaledVector(screenUp, faceDist * 0.12);
     } else {
       /* Left edge of display ~50%; crop right; keep base/trackpad in frame */
       var leftEdge = new THREE.Vector3()
@@ -1531,9 +1571,9 @@ async function init() {
   function renderFrame() {
     if (bloomPass) {
       var baseBloom = isMobile || state.gpuOffLikely ? 0.28 : 0.34;
-      bloomPass.strength = baseBloom + bloomFlash * 2.8;
-      /* High threshold during flash → only the bright panel blooms, not floor */
-      bloomPass.threshold = bloomFlash > 0.08 ? 0.62 : 0.78;
+      bloomPass.strength = baseBloom + bloomFlash * 3.2;
+      /* Floor is muted during flash; threshold lets screen white plane bloom */
+      bloomPass.threshold = bloomFlash > 0.08 ? 0.35 : 0.78;
     }
     if (vigPass && vigPass.uniforms && vigPass.uniforms.time) {
       vigPass.uniforms.time.value = performance.now() * 0.001;
@@ -1685,39 +1725,82 @@ async function init() {
       document.body.classList.add("is-figma-live");
       var tf = t >= T_FIG0 ? clamp01((t - T_FIG0) / TIMING.figma) : clamp01((lidTl - 0.32) / 0.4);
       timeline.figmaP = easeOutCubic(Math.max(timeline.figmaP || 0, tf));
-      /* During flash: paint brighter so bloom origins on the panel */
-      var paintP = Math.max(timeline.figmaP, bloomFlash > 0.15 ? 0.85 : 0);
+      var paintP = Math.max(timeline.figmaP, bloomFlash > 0.12 ? 0.9 : 0);
       figma.paintFrame(paintP, bloomFlash);
       if (screenOverlay) {
-        screenOverlay.material.opacity = Math.max(timeline.figmaP, bloomFlash * 0.95, 0.001);
+        screenOverlay.material.opacity = Math.max(timeline.figmaP, bloomFlash * 0.98, 0.001);
       }
-      /* Bounce tightly onto keyboard from screen — never a floor pool */
+      /* White flash plane ON the panel — bloom source is the screen, not the floor */
+      if (screenFlashPlane && screenFlashPlane.material) {
+        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(1, bloomFlash * 1.35) : 0;
+        screenFlashPlane.visible = bloomFlash > 0.02;
+      }
+      /* Soft keyboard kiss only — short range, no floor spill */
       if (screenOverlay) {
         var sp = new THREE.Vector3();
         screenOverlay.getWorldPosition(sp);
         var sn = new THREE.Vector3(0, 1, 0);
         sn.transformDirection(screenOverlay.matrixWorld).normalize();
         if (sn.dot(camera.position.clone().sub(sp)) < 0) sn.negate();
-        screenBounce.position.copy(sp).addScaledVector(sn, 0.08);
-        screenBounce.target.position.set(sp.x * 0.15, 0.12, sp.z + 0.15);
+        screenBounce.position.copy(sp).addScaledVector(sn, 0.05);
+        screenBounce.target.position.set(sp.x * 0.05, 0.22, sp.z * 0.2);
         screenBounce.target.updateMatrixWorld();
       }
-      screenBounce.intensity = 2.8 * timeline.figmaP + bloomFlash * 7.5;
+      /* Cap bounce: high intensity was specular-blooming the floor ellipse */
+      screenBounce.intensity = 2.2 * timeline.figmaP + bloomFlash * 2.4;
+      screenBounce.distance = bloomFlash > 0.05 ? 2.4 : 4.2;
+      screenBounce.angle = bloomFlash > 0.05 ? Math.PI / 16 : Math.PI / 11;
+      screenBounce.decay = bloomFlash > 0.05 ? 2.4 : 1.9;
     } else {
       figma.paintFrame(0);
       timeline.figmaP = 0;
       if (screenOverlay) screenOverlay.material.opacity = 0;
+      if (screenFlashPlane) {
+        screenFlashPlane.visible = false;
+        screenFlashPlane.material.opacity = 0;
+      }
       screenBounce.intensity = 0;
     }
-    /* Kill floor glow during flash so bloom cannot form a ground ellipse */
+    /* Mute EVERY floor light contributor during flash (glow + specular metal) */
     if (studio.glow) {
-      if (bloomFlash > 0.04) {
-        studio.glow.visible = false;
-        studio.glow.material.opacity = 0;
-      } else {
-        studio.glow.visible = true;
-        studio.glow.material.opacity = 0.05 + 0.04 * timeline.figmaP;
+      studio.glow.visible = false;
+      studio.glow.material.opacity = 0;
+    }
+    if (studio.contact && studio.contact.material) {
+      studio.contact.material.opacity = bloomFlash > 0.04 ? 0.08 : 0.38;
+    }
+    if (studio.ground && studio.ground.material) {
+      if (!studio.ground.userData._flashBase) {
+        studio.ground.userData._flashBase = {
+          metalness: studio.ground.material.metalness,
+          roughness: studio.ground.material.roughness,
+          clearcoat: studio.ground.material.clearcoat,
+          envMapIntensity: studio.ground.material.envMapIntensity,
+        };
       }
+      var fb = studio.ground.userData._flashBase;
+      if (bloomFlash > 0.04) {
+        studio.ground.material.metalness = 0.05;
+        studio.ground.material.roughness = 0.92;
+        studio.ground.material.clearcoat = 0;
+        studio.ground.material.envMapIntensity = 0.05;
+      } else {
+        studio.ground.material.metalness = fb.metalness;
+        studio.ground.material.roughness = fb.roughness;
+        studio.ground.material.clearcoat = fb.clearcoat;
+        studio.ground.material.envMapIntensity = fb.envMapIntensity;
+        if (studio.glow) {
+          studio.glow.visible = true;
+          studio.glow.material.opacity = 0.03 + 0.02 * timeline.figmaP;
+        }
+      }
+    }
+    /* Brief rim punch so lid edge reads during the flash beat */
+    if (typeof rimLid !== "undefined" && rimLid) {
+      rimLid.intensity = bloomFlash > 0.05 ? 5.5 : 3.2;
+    }
+    if (typeof rim !== "undefined" && rim) {
+      rim.intensity = bloomFlash > 0.05 ? 6.5 : 5.2;
     }
     /* ~0.45–0.55s decay at 60fps */
     bloomFlash *= 0.88;
