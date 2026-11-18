@@ -14,7 +14,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v025-20261117234232";
+var BUILD = "notebook-studio-v025-20261117234904";
 var CDN_TAG = "v0.2.5";
 
 var reduced =
@@ -627,11 +627,9 @@ function makeStudioFloor() {
 
   var ground = new THREE.Mesh(
     new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({
+    new THREE.MeshBasicMaterial({
       color: 0x000000,
-      roughness: 1,
-      metalness: 0,
-      envMapIntensity: 0,
+      toneMapped: false,
     })
   );
   ground.rotation.x = -Math.PI / 2;
@@ -644,9 +642,9 @@ function makeStudioFloor() {
   gc.height = 256;
   var gctx = gc.getContext("2d");
   var grd = gctx.createRadialGradient(128, 128, 4, 128, 128, 128);
-  grd.addColorStop(0, "rgba(210,220,235,0.22)");
-  grd.addColorStop(0.25, "rgba(140,155,175,0.08)");
-  grd.addColorStop(0.55, "rgba(40,45,55,0.02)");
+  grd.addColorStop(0, "rgba(180,190,205,0.35)");
+  grd.addColorStop(0.2, "rgba(80,90,105,0.12)");
+  grd.addColorStop(0.5, "rgba(20,22,28,0.04)");
   grd.addColorStop(1, "rgba(0,0,0,0)");
   gctx.fillStyle = grd;
   gctx.fillRect(0, 0, 256, 256);
@@ -654,12 +652,12 @@ function makeStudioFloor() {
   glowTex.needsUpdate = true;
 
   var glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.6, 2.6),
+    new THREE.PlaneGeometry(2.0, 2.0),
     new THREE.MeshBasicMaterial({
       map: glowTex,
       transparent: true,
-      opacity: 0.22,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.35,
+      blending: THREE.NormalBlending,
       depthWrite: false,
       toneMapped: false,
     })
@@ -773,11 +771,11 @@ function upgradeChassisMaterials(root, figmaTex) {
       var baseCol;
       if (isKey) {
         /* Matte black keys — no white edge, no plastic blue */
-        baseCol = new THREE.Color(0x0a0a0b);
+        baseCol = new THREE.Color(0x050506);
       } else {
         /* Space Black / Space Gray aluminum */
-        baseCol = new THREE.Color(0x1c1c1e);
-        if (m.color) baseCol.lerp(m.color, 0.15);
+        baseCol = new THREE.Color(0x161618);
+        if (m.color) baseCol.lerp(m.color, 0.08);
       }
       var phys = new THREE.MeshPhysicalMaterial({
         color: baseCol,
@@ -785,12 +783,12 @@ function upgradeChassisMaterials(root, figmaTex) {
         normalMap: isKey ? null : m.normalMap || null,
         roughnessMap: isKey ? null : m.roughnessMap || null,
         metalnessMap: isKey ? null : m.metalnessMap || null,
-        metalness: isKey ? 0.08 : 0.88,
-        roughness: isKey ? 0.82 : 0.38,
-        clearcoat: isKey ? 0.02 : 0.45,
-        clearcoatRoughness: isKey ? 0.7 : 0.32,
-        envMapIntensity: isKey ? 0.12 : 0.55,
-        reflectivity: isKey ? 0.15 : 0.55,
+        metalness: isKey ? 0.02 : 0.82,
+        roughness: isKey ? 0.92 : 0.42,
+        clearcoat: isKey ? 0 : 0.35,
+        clearcoatRoughness: isKey ? 1 : 0.4,
+        envMapIntensity: isKey ? 0.04 : 0.4,
+        reflectivity: isKey ? 0.05 : 0.45,
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
       });
@@ -808,7 +806,7 @@ function makeVignetteGrainShader() {
     uniforms: {
       tDiffuse: { value: null },
       vignette: { value: 0.85 },
-      grain: { value: 0.035 },
+      grain: { value: 0.004 },
       time: { value: 0 },
     },
     vertexShader: [
@@ -930,17 +928,26 @@ function setEdgeWireOpacity(edgeGroup, amount) {
   var lines = (edgeGroup && edgeGroup.userData && edgeGroup.userData._lines) || [];
   lines.forEach(function (line) {
     if (line.material) {
-      /* After dissolve: opacity 0 + hidden — no white key outlines in final */
       if (a <= 0.02) {
         line.material.opacity = 0;
         line.visible = false;
       } else {
-        line.material.opacity = 0.1 + 0.85 * a;
+        line.material.opacity = 0.08 + 0.7 * a;
         line.visible = true;
       }
     }
   });
   if (edgeGroup) edgeGroup.visible = a > 0.02;
+}
+
+function purgeEdgeWires(root) {
+  if (!root) return;
+  root.traverse(function (o) {
+    if (o.isLineSegments || o.userData.isEdgeWire) {
+      o.visible = false;
+      if (o.material) o.material.opacity = 0;
+    }
+  });
 }
 
 function setWireframeMix(entries, wireAmount) {
@@ -1386,17 +1393,13 @@ async function init() {
       if (studio.floorWire) studio.floorWire.visible = false;
       if (studio.ground) {
         studio.ground.visible = true;
-        if (studio.ground.material) {
+        if (studio.ground.material && studio.ground.material.color) {
           studio.ground.material.color.set(0x000000);
-          studio.ground.material.metalness = 0;
-          studio.ground.material.roughness = 1;
-          studio.ground.material.envMapIntensity = 0;
         }
       }
       if (studio.glow && studio.glow.material) {
-        /* Soft radial under notebook only */
         studio.glow.visible = true;
-        studio.glow.material.opacity = 0.18 + 0.08 * a;
+        studio.glow.material.opacity = 0.3 + 0.1 * a;
       }
       if (studio.contact && studio.contact.material) {
         studio.contact.visible = true;
@@ -1483,8 +1486,8 @@ async function init() {
         state.bloomOk = true;
       }
       vigPass = new ShaderPass(makeVignetteGrainShader());
-      vigPass.uniforms.vignette.value = isMobile || state.gpuOffLikely ? 1.25 : 1.15;
-      vigPass.uniforms.grain.value = 0.02;
+      vigPass.uniforms.vignette.value = isMobile || state.gpuOffLikely ? 1.35 : 1.2;
+      vigPass.uniforms.grain.value = 0.004;
       composer.addPass(vigPass);
       composer.addPass(new OutputPass());
       state.postOk = true;
@@ -1713,9 +1716,15 @@ async function init() {
     var wireAmt = 1 - easeOutExpo(dissolveT);
     setWireframeMix(matEntries, wireAmt);
     setEdgeWireOpacity(edgeWires, wireAmt);
-    if (wireAmt <= 0.02 && edgeWires) {
-      edgeWires.visible = false;
-      setEdgeWireOpacity(edgeWires, 0);
+    if (wireAmt <= 0.02) {
+      if (edgeWires) {
+        edgeWires.visible = false;
+        setEdgeWireOpacity(edgeWires, 0);
+      }
+      if (!timeline._purgedWires) {
+        purgeEdgeWires(root);
+        timeline._purgedWires = true;
+      }
     }
     if (studio.floorWire) {
       studio.floorWire.material.opacity = Math.max(0, 0.2 * wireAmt);
@@ -1759,11 +1768,11 @@ async function init() {
       if (screenOverlay) {
         screenOverlay.material.opacity = Math.max(timeline.figmaP, bloomFlash * 0.98, 0.001);
       }
-      /* Localized flash: bright panel + short keyboard halo only */
+      /* Localized flash: screen plane only. Tiny keyboard kiss after peak decays. */
       if (screenFlashPlane && screenFlashPlane.material) {
-        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(0.85, bloomFlash * 0.95) : 0;
+        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(0.92, bloomFlash * 1.05) : 0;
         screenFlashPlane.visible = bloomFlash > 0.02;
-        screenFlashPlane.scale.set(0.88, 0.88, 0.88);
+        screenFlashPlane.scale.set(0.9, 0.9, 0.9);
       }
       if (screenOverlay) {
         var sp = new THREE.Vector3();
@@ -1771,20 +1780,23 @@ async function init() {
         var sn = new THREE.Vector3(0, 1, 0);
         sn.transformDirection(screenOverlay.matrixWorld).normalize();
         if (sn.dot(camera.position.clone().sub(sp)) < 0) sn.negate();
-        screenBounce.position.copy(sp).addScaledVector(sn, 0.05);
-        screenBounce.target.position.set(sp.x * 0.04, 0.18, sp.z * 0.12);
+        screenBounce.position.copy(sp).addScaledVector(sn, 0.04);
+        screenBounce.target.position.set(sp.x * 0.03, 0.16, sp.z * 0.08);
         screenBounce.target.updateMatrixWorld();
-        if (bloomFlash > 0.08) {
-          /* Short halo on keyboard deck — not a floor pool */
-          screenBounce.intensity = 1.8 * bloomFlash;
-          screenBounce.distance = 1.8;
-          screenBounce.angle = Math.PI / 18;
-          screenBounce.decay = 2.6;
+        if (bloomFlash > 0.35) {
+          /* Peak: no bounce — bloom comes from screenFlashPlane only */
+          screenBounce.intensity = 0;
+        } else if (bloomFlash > 0.08) {
+          /* Short soft halo on keys as flash fades */
+          screenBounce.intensity = 0.55 * bloomFlash;
+          screenBounce.distance = 1.4;
+          screenBounce.angle = Math.PI / 20;
+          screenBounce.decay = 2.8;
         } else {
-          screenBounce.intensity = 1.6 * timeline.figmaP;
-          screenBounce.distance = 3.0;
-          screenBounce.angle = Math.PI / 14;
-          screenBounce.decay = 2.0;
+          screenBounce.intensity = 1.35 * timeline.figmaP;
+          screenBounce.distance = 2.6;
+          screenBounce.angle = Math.PI / 15;
+          screenBounce.decay = 2.1;
         }
       }
     } else {
@@ -1809,18 +1821,18 @@ async function init() {
         studio.glow.material.opacity = 0;
       } else {
         studio.glow.visible = true;
-        studio.glow.material.opacity = 0.16 + 0.06 * timeline.figmaP;
+        studio.glow.material.opacity = 0.28 + 0.08 * timeline.figmaP;
       }
     }
     if (studio.contact) {
       studio.contact.visible = bloomFlash <= 0.08;
-      if (studio.contact.material) studio.contact.material.opacity = 0.75;
+      if (studio.contact.material) studio.contact.material.opacity = 0.85;
     }
-    key.intensity = bloomFlash > 0.08 ? 0.06 : 0.22;
-    fill.intensity = 0.04;
-    rimLid.intensity = bloomFlash > 0.08 ? 2.4 : 1.6;
-    rim.intensity = bloomFlash > 0.08 ? 3.4 : 2.8;
-    rimHinge.intensity = bloomFlash > 0.08 ? 2.2 : 1.8;
+    key.intensity = bloomFlash > 0.08 ? 0.04 : 0.16;
+    fill.intensity = 0.03;
+    rimLid.intensity = bloomFlash > 0.08 ? 1.8 : 1.35;
+    rim.intensity = bloomFlash > 0.08 ? 2.6 : 2.2;
+    rimHinge.intensity = bloomFlash > 0.08 ? 1.6 : 1.4;
     /* ~0.45–0.55s decay at 60fps */
     bloomFlash *= 0.88;
 
