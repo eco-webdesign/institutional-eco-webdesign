@@ -10,13 +10,12 @@ import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.2.3 — lapidar Webmaster.
-  Scramble settle; flash na tela; rim/wire Edges; floor sem borda; face-right; partículas.
+  Poytara abertura estúdio v0.2.4 — flash só na tela; rim/tampa legível.
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v023-20261117230709";
-var CDN_TAG = "v0.2.3";
+var BUILD = "notebook-studio-v024-20261117231835";
+var CDN_TAG = "v0.2.4";
 
 var reduced =
   window.matchMedia &&
@@ -313,19 +312,20 @@ function createFigmaTexture() {
     ctx.closePath();
   }
 
-  function paintFrame(progress) {
+  function paintFrame(progress, flashAmt) {
     var p = clamp01(progress);
+    var flash = clamp01(flashAmt || 0);
     var lw = 1024;
     var lh = 640;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
     ctx.setTransform(w / lw, 0, 0, h / lh, 0, 0);
 
-    /* Thin MacBook glass bezel (near-black) */
-    ctx.fillStyle = "#0a0a0a";
+    /* Thin MacBook glass bezel — pure black frame that always reads */
+    ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, lw, lh);
-    var inset = 10;
-    ctx.fillStyle = "#1c1c1e";
+    var inset = 14;
+    ctx.fillStyle = "#0e0e10";
     ctx.fillRect(inset, inset, lw - inset * 2, lh - inset * 2);
 
     var ox = inset;
@@ -476,6 +476,14 @@ function createFigmaTexture() {
     ctx.restore();
     ctx.restore();
 
+    /* Screen-on flash: white wash only inside the panel (feeds bloom from the display) */
+    if (flash > 0.02) {
+      ctx.globalAlpha = Math.min(1, flash * 1.15);
+      ctx.fillStyle = "#f7f9ff";
+      ctx.fillRect(inset, inset, lw - inset * 2, lh - inset * 2);
+      ctx.globalAlpha = 1;
+    }
+
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     tex.needsUpdate = true;
   }
@@ -489,13 +497,6 @@ function bindScreenTexture(root, figma) {
   if (!screenMesh) {
     return null;
   }
-
-  ["Object_4", "Object_6"].forEach(function (name) {
-    var o = root.getObjectByName(name);
-    if (o) {
-      o.visible = false;
-    }
-  });
 
   var posAttr = screenMesh.geometry.attributes.position;
   var xmin = Infinity;
@@ -543,15 +544,51 @@ function bindScreenTexture(root, figma) {
   overlay.position.set((xmin + xmax) / 2, yAvg + 0.0015, (zmin + zmax) / 2);
   overlay.renderOrder = 3;
   screenMesh.visible = false;
-  /* Hide thick gray bezel/glass leftovers around the panel */
+
+  /* Darken glass/bezel meshes instead of hiding — keeps chin/hinge bridge */
   ["Object_4", "Object_5", "Object_6", "Object_8"].forEach(function (name) {
     var o = root.getObjectByName(name);
-    if (o) {
-      o.visible = false;
+    if (!o || !o.material) {
+      return;
     }
+    o.visible = true;
+    var mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach(function (m) {
+      if (!m) return;
+      if (m.color) m.color.set(0x050506);
+      if (m.emissive) {
+        m.emissive.set(0x0a0c10);
+        m.emissiveIntensity = 0.12;
+      }
+      if (m.metalness !== undefined) m.metalness = 0.9;
+      if (m.roughness !== undefined) m.roughness = 0.35;
+      if (m.opacity !== undefined) {
+        m.transparent = false;
+        m.opacity = 1;
+      }
+      m.needsUpdate = true;
+    });
   });
+
+  /* Extra black chin strip under panel so screen never floats */
+  var chin = new THREE.Mesh(
+    new THREE.PlaneGeometry(pw * 1.02, ph * 0.08),
+    new THREE.MeshStandardMaterial({
+      color: 0x050506,
+      metalness: 0.85,
+      roughness: 0.4,
+      emissive: new THREE.Color(0x10141c),
+      emissiveIntensity: 0.18,
+    })
+  );
+  chin.name = "screenChin";
+  chin.rotation.x = -Math.PI / 2;
+  chin.position.set((xmin + xmax) / 2, yAvg + 0.0008, zmin - ph * 0.02);
+  chin.renderOrder = 2;
+  (screenMesh.parent || root).add(chin);
+
   (screenMesh.parent || root).add(overlay);
-  state.stripeFix = "uv-roty-pi-repeatX-neg-thin-bezel";
+  state.stripeFix = "uv-roty-pi-chin-bezel-v024";
   return overlay;
 }
 
@@ -581,8 +618,8 @@ function makeStudioFloor() {
   gc.height = 256;
   var gctx = gc.getContext("2d");
   var grd = gctx.createRadialGradient(128, 128, 8, 128, 128, 128);
-  grd.addColorStop(0, "rgba(120,140,255,0.55)");
-  grd.addColorStop(0.35, "rgba(80,100,220,0.18)");
+  grd.addColorStop(0, "rgba(90,105,150,0.10)");
+  grd.addColorStop(0.35, "rgba(40,50,90,0.03)");
   grd.addColorStop(1, "rgba(0,0,0,0)");
   gctx.fillStyle = grd;
   gctx.fillRect(0, 0, 256, 256);
@@ -590,13 +627,14 @@ function makeStudioFloor() {
   glowTex.needsUpdate = true;
 
   var glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(7.5, 7.5),
+    new THREE.PlaneGeometry(3.2, 3.2),
     new THREE.MeshBasicMaterial({
       map: glowTex,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.035,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      toneMapped: false,
     })
   );
   glow.rotation.x = -Math.PI / 2;
@@ -702,9 +740,10 @@ function upgradeChassisMaterials(root, figmaTex) {
       }
       var n = (o.name || "").toLowerCase();
       var isKey = n.indexOf("key") >= 0 || n.indexOf("deck") >= 0;
-      var baseCol = m.color ? m.color.clone() : new THREE.Color(0x2c2d32);
+      var baseCol = m.color ? m.color.clone() : new THREE.Color(0x3a3e48);
       if (!isKey) {
-        baseCol.offsetHSL(0, 0, 0.04);
+        /* Lift lid/chassis above pure void so moldura reads */
+        baseCol.lerp(new THREE.Color(0x5a616c), 0.45);
       }
       var phys = new THREE.MeshPhysicalMaterial({
         color: baseCol,
@@ -712,14 +751,14 @@ function upgradeChassisMaterials(root, figmaTex) {
         normalMap: m.normalMap || null,
         roughnessMap: m.roughnessMap || null,
         metalnessMap: m.metalnessMap || null,
-        metalness: isKey ? 0.18 : 0.94,
-        roughness: isKey ? 0.68 : 0.3,
-        clearcoat: isKey ? 0.08 : 0.7,
-        clearcoatRoughness: isKey ? 0.55 : 0.22,
-        envMapIntensity: isKey ? 0.5 : 1.35,
-        reflectivity: 0.78,
-        emissive: isKey ? new THREE.Color(0x000000) : new THREE.Color(0x0a1018),
-        emissiveIntensity: isKey ? 0 : 0.08,
+        metalness: isKey ? 0.2 : 0.92,
+        roughness: isKey ? 0.65 : 0.26,
+        clearcoat: isKey ? 0.1 : 0.78,
+        clearcoatRoughness: isKey ? 0.5 : 0.18,
+        envMapIntensity: isKey ? 0.55 : 1.6,
+        reflectivity: 0.82,
+        emissive: isKey ? new THREE.Color(0x000000) : new THREE.Color(0x243044),
+        emissiveIntensity: isKey ? 0 : 0.38,
       });
       if (m.map) {
         phys.map.colorSpace = THREE.SRGBColorSpace;
@@ -985,14 +1024,14 @@ async function init() {
   state.webglOk = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.34;
+  renderer.toneMappingExposure = isMobile ? 1.48 : 1.36;
   renderer.shadowMap.enabled = !state.gpuOffLikely;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setClearColor(0x000000, 1);
 
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.028);
+  scene.fog = new THREE.FogExp2(0x000000, 0.016);
 
   /* ~50–85mm feel */
   var camera = new THREE.PerspectiveCamera(26, 1, 0.05, 200);
@@ -1009,7 +1048,7 @@ async function init() {
     setStatus("env-map skipped");
   }
 
-  var hemi = new THREE.HemisphereLight(0x6a7a9a, 0x000000, 0.12);
+  var hemi = new THREE.HemisphereLight(0x8a9ab8, 0x050608, isMobile ? 0.32 : 0.24);
   scene.add(hemi);
 
   var key = new THREE.DirectionalLight(0xfff1e0, 0.55);
@@ -1029,22 +1068,26 @@ async function init() {
   }
   scene.add(key);
 
-  var rim = new THREE.DirectionalLight(0xc5dcff, 3.2);
-  rim.position.set(-6.2, 4.2, -5.8);
+  var rim = new THREE.DirectionalLight(0xd0e4ff, 5.2);
+  rim.position.set(-6.2, 4.6, -6.2);
   scene.add(rim);
 
-  var rimHinge = new THREE.DirectionalLight(0xa8c8ff, 1.6);
-  rimHinge.position.set(3.5, 1.2, -4.5);
+  var rimHinge = new THREE.DirectionalLight(0xb8d4ff, 3.8);
+  rimHinge.position.set(4.2, 1.4, -5.2);
   scene.add(rimHinge);
+
+  var rimLid = new THREE.DirectionalLight(0xe8f2ff, 3.2);
+  rimLid.position.set(0.5, 5.5, -3.8);
+  scene.add(rimLid);
 
   var fill = new THREE.DirectionalLight(0x4a5878, 0.18);
   fill.position.set(-2.5, 1.8, 5.5);
   scene.add(fill);
 
   /* Screen bounce onto keyboard (fake RectArea — CSP-safe) */
-  var screenBounce = new THREE.SpotLight(0xdde8ff, 0, 12, Math.PI / 5, 0.55, 1.2);
+  var screenBounce = new THREE.SpotLight(0xe8f0ff, 0, 4.2, Math.PI / 11, 0.55, 1.9);
   screenBounce.position.set(0, 1.6, 1.1);
-  screenBounce.target.position.set(0, 0.05, 0.2);
+  screenBounce.target.position.set(0, 0.08, 0.35);
   scene.add(screenBounce);
   scene.add(screenBounce.target);
 
@@ -1241,29 +1284,31 @@ async function init() {
     var screenWorldH = Math.abs(localH * Math.max(worldScale.y, worldScale.z));
 
     var vFov = THREE.MathUtils.degToRad(camera.fov);
-    /* Desktop: taller crop so right of notebook exits frame; mobile: room for copy below */
-    var fillH = isMobile ? 0.38 : 0.64;
+    /*
+      Desktop: screen ~52% tall → moldura ~8%, base tela ~80%, trackpad ~88–90%.
+      Mobile: smaller/higher notebook (upper/mid), full-ish screen, room for copy below.
+    */
+    var fillH = isMobile ? 0.30 : 0.52;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? 0.34 : 0.14;
+    var ndcY = isMobile ? 0.42 : 0.20;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
-      /* Higher notebook; leave lower third for info */
-      camFaceTarget.copy(center).addScaledVector(screenUp, -vertShift * 0.15);
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
-      camFace.addScaledVector(screenUp, faceDist * 0.06);
+      camFaceTarget.copy(center).addScaledVector(screenUp, -vertShift * 0.12);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.08);
+      camFace.addScaledVector(screenUp, faceDist * 0.08);
     } else {
-      /* Left edge of display at ~50% width; crop right heavily */
+      /* Left edge of display ~50%; crop right; keep base/trackpad in frame */
       var leftEdge = new THREE.Vector3()
         .copy(center)
         .addScaledVector(screenRight, -screenWorldW * 0.5);
       camFaceTarget
         .copy(leftEdge)
-        .addScaledVector(screenRight, screenWorldW * 0.03)
+        .addScaledVector(screenRight, screenWorldW * 0.04)
         .addScaledVector(screenUp, -vertShift);
       camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
-      camFace.addScaledVector(screenUp, faceDist * 0.03);
+      camFace.addScaledVector(screenUp, faceDist * 0.02);
     }
   }
 
@@ -1274,23 +1319,30 @@ async function init() {
     if (a > 0.5) {
       scene.background = new THREE.Color(0x000000);
       renderer.setClearColor(0x000000, 1);
-      scene.fog = new THREE.FogExp2(0x000000, 0.045 + 0.02 * a);
+      /* Weak fog — strong fog ate the lid silhouette */
+      scene.fog = new THREE.FogExp2(0x000000, 0.012 + 0.008 * a);
     }
     if (studio.group) {
       studio.group.traverse(function (o) {
         if (o.name === "floorWire") {
-          o.visible = a < 0.35;
+          o.visible = a < 0.25;
         }
-        if (o.isMesh && o.material && o.material.color && o !== studio.contact) {
-          /* Floor toward void; keep a whisper of reflection */
+        if (o === studio.glow && o.material) {
+          /* Floor glow stays tiny in final; never a light pool */
+          o.material.opacity = 0.04 * (1 - a * 0.5);
+          o.visible = a < 0.95;
+        }
+        if (o.isMesh && o.material && o.material.color && o !== studio.contact && o !== studio.glow) {
           if (!o.userData._baseColor) {
             o.userData._baseColor = o.material.color.clone();
           }
-          var crush = o === studio.ground || o === studio.glow ? 0.96 : 0.85;
-          o.material.color.copy(o.userData._baseColor).lerp(new THREE.Color(0x000000), a * crush);
+          /* Only crush the ground plane toward void */
+          if (o === studio.ground) {
+            o.material.color.copy(o.userData._baseColor).lerp(new THREE.Color(0x000000), a * 0.97);
+          }
         }
         if (o === studio.contact && o.material) {
-          o.material.opacity = 0.42 + 0.2 * a;
+          o.material.opacity = 0.35 + 0.15 * a;
         }
       });
     }
@@ -1436,20 +1488,20 @@ async function init() {
     /* Desktop: left black. Mobile: below notebook with clear gap. */
     if (isMobile) {
       beatCopy.style.top = "auto";
-      beatCopy.style.bottom = "4%";
-      beatCopy.style.left = "7%";
-      beatCopy.style.right = "7%";
-      beatCopy.style.maxWidth = "86%";
+      beatCopy.style.bottom = "5%";
+      beatCopy.style.left = "8%";
+      beatCopy.style.right = "8%";
+      beatCopy.style.maxWidth = "84%";
       beatCopy.style.textAlign = "left";
-      beatCopy.style.paddingTop = "0.5rem";
+      beatCopy.style.paddingTop = "0.75rem";
       if (titleEl) {
-        titleEl.style.fontSize = "1.35rem";
-        titleEl.style.marginBottom = "0.2rem";
+        titleEl.style.fontSize = "1.25rem";
+        titleEl.style.marginBottom = "0.15rem";
         titleEl.style.marginTop = "0";
       }
       if (hintEl) {
-        hintEl.style.fontSize = "0.9rem";
-        hintEl.style.marginBottom = "0.35rem";
+        hintEl.style.fontSize = "0.85rem";
+        hintEl.style.marginBottom = "0.3rem";
       }
     } else {
       beatCopy.style.top = "20%";
@@ -1478,9 +1530,10 @@ async function init() {
 
   function renderFrame() {
     if (bloomPass) {
-      var baseBloom = isMobile || state.gpuOffLikely ? 0.22 : 0.32;
-      bloomPass.strength = baseBloom + bloomFlash * 2.4;
-      bloomPass.threshold = bloomFlash > 0.25 ? 0.42 : 0.72;
+      var baseBloom = isMobile || state.gpuOffLikely ? 0.28 : 0.34;
+      bloomPass.strength = baseBloom + bloomFlash * 2.8;
+      /* High threshold during flash → only the bright panel blooms, not floor */
+      bloomPass.threshold = bloomFlash > 0.08 ? 0.62 : 0.78;
     }
     if (vigPass && vigPass.uniforms && vigPass.uniforms.time) {
       vigPass.uniforms.time.value = performance.now() * 0.001;
@@ -1632,30 +1685,39 @@ async function init() {
       document.body.classList.add("is-figma-live");
       var tf = t >= T_FIG0 ? clamp01((t - T_FIG0) / TIMING.figma) : clamp01((lidTl - 0.32) / 0.4);
       timeline.figmaP = easeOutCubic(Math.max(timeline.figmaP || 0, tf));
-      figma.paintFrame(Math.max(timeline.figmaP, bloomFlash > 0.2 ? 0.55 : 0));
+      /* During flash: paint brighter so bloom origins on the panel */
+      var paintP = Math.max(timeline.figmaP, bloomFlash > 0.15 ? 0.85 : 0);
+      figma.paintFrame(paintP, bloomFlash);
       if (screenOverlay) {
-        screenOverlay.material.opacity = Math.max(timeline.figmaP, bloomFlash * 0.85);
+        screenOverlay.material.opacity = Math.max(timeline.figmaP, bloomFlash * 0.95, 0.001);
       }
-      /* Bounce aimed at keyboard from screen — not floor bloom */
+      /* Bounce tightly onto keyboard from screen — never a floor pool */
       if (screenOverlay) {
         var sp = new THREE.Vector3();
         screenOverlay.getWorldPosition(sp);
         var sn = new THREE.Vector3(0, 1, 0);
         sn.transformDirection(screenOverlay.matrixWorld).normalize();
         if (sn.dot(camera.position.clone().sub(sp)) < 0) sn.negate();
-        screenBounce.position.copy(sp).addScaledVector(sn, 0.12);
-        screenBounce.target.position.set(sp.x, 0.02, sp.z + 0.35);
+        screenBounce.position.copy(sp).addScaledVector(sn, 0.08);
+        screenBounce.target.position.set(sp.x * 0.15, 0.12, sp.z + 0.15);
         screenBounce.target.updateMatrixWorld();
       }
-      screenBounce.intensity = 3.2 * timeline.figmaP + bloomFlash * 6.5;
-      if (studio.glow && studio.glow.material) {
-        studio.glow.material.opacity = 0.35 + 0.2 * timeline.figmaP;
-      }
+      screenBounce.intensity = 2.8 * timeline.figmaP + bloomFlash * 7.5;
     } else {
       figma.paintFrame(0);
       timeline.figmaP = 0;
       if (screenOverlay) screenOverlay.material.opacity = 0;
       screenBounce.intensity = 0;
+    }
+    /* Kill floor glow during flash so bloom cannot form a ground ellipse */
+    if (studio.glow) {
+      if (bloomFlash > 0.04) {
+        studio.glow.visible = false;
+        studio.glow.material.opacity = 0;
+      } else {
+        studio.glow.visible = true;
+        studio.glow.material.opacity = 0.05 + 0.04 * timeline.figmaP;
+      }
     }
     /* ~0.45–0.55s decay at 60fps */
     bloomFlash *= 0.88;
@@ -1753,7 +1815,11 @@ async function init() {
     camera.lookAt(camFaceTarget);
     applyFinalStudioLook(1);
     bloomFlash *= 0.9;
-    screenBounce.intensity = 3.4;
+    screenBounce.intensity = isMobile ? 4.2 : 3.6;
+    if (studio.glow) {
+      studio.glow.visible = false;
+      studio.glow.material.opacity = 0;
+    }
     if (screenOverlay) screenOverlay.material.opacity = 1;
     figma.paintFrame(1);
     if (titleEl) titleEl.textContent = titleFinal;
@@ -1849,7 +1915,7 @@ async function init() {
   });
   window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · studio v0.2.3 · stripeFix=" +
+    "ready · studio v0.2.4 · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
       (state.dofOk ? " · dof" : " · no-dof") +
