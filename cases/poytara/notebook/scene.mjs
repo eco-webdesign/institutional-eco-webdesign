@@ -15,7 +15,7 @@ import { RGBELoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
   CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta.
 */
 
-var BUILD = "notebook-studio-v035-20261118155240";
+var BUILD = "notebook-studio-v035-20261118155810";
 var CDN_TAG = "v0.3.5";
 
 var reduced =
@@ -1593,13 +1593,13 @@ async function init() {
         Width-led; slight extra pullback so bezel/sidebar never kiss the edge.
         Desktop path untouched below.
       */
-      var fillW = 0.88;
+      var fillW = 0.84;
       var distW = (cSize.x * 0.5) / (Math.tan(hFov / 2) * fillW);
-      var distH = (cSize.y * 0.5) / (Math.tan(vFov / 2) * 0.74);
-      faceDist = Math.max(distW, distH) * 1.06;
-      camFaceTarget.copy(cCenter).addScaledVector(screenUp, cSize.y * 0.07);
+      var distH = (cSize.y * 0.5) / (Math.tan(vFov / 2) * 0.66);
+      faceDist = Math.max(distW, distH) * 1.14;
+      camFaceTarget.copy(cCenter).addScaledVector(screenUp, cSize.y * 0.05);
       camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
-      camFace.addScaledVector(screenUp, faceDist * 0.025);
+      camFace.addScaledVector(screenUp, faceDist * 0.02);
       if (!state._frozenMobileFace) {
         state._frozenMobileFace = camFace.clone();
         state._frozenMobileFaceTarget = camFaceTarget.clone();
