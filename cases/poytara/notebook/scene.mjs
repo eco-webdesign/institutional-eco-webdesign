@@ -14,7 +14,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v026-20261118000438";
+var BUILD = "notebook-studio-v026-20261118000951";
 var CDN_TAG = "v0.2.6";
 
 var reduced =
@@ -1801,10 +1801,10 @@ async function init() {
       document.body.classList.add("is-figma-live");
       var tf = t >= T_FIG0 ? clamp01((t - T_FIG0) / TIMING.figma) : clamp01((lidTl - 0.32) / 0.4);
       timeline.figmaP = easeOutCubic(Math.max(timeline.figmaP || 0, tf));
-      var paintP = Math.max(timeline.figmaP, bloomFlash > 0.12 ? 0.9 : 0);
-      figma.paintFrame(paintP, bloomFlash);
+      var paintP = Math.max(timeline.figmaP, bloomFlash > 0.08 ? 1 : 0);
+      figma.paintFrame(paintP, bloomFlash > 0.08 ? Math.max(bloomFlash, 0.85) : 0);
       if (screenOverlay) {
-        screenOverlay.material.opacity = Math.max(timeline.figmaP, bloomFlash * 0.98, 0.001);
+        screenOverlay.material.opacity = Math.max(timeline.figmaP, bloomFlash > 0.08 ? 1 : 0, 0.001);
       }
       /* Timed flash envelope: plateau ~80ms then fade by ~350ms (250–400ms total) */
       if (timeline.flashed && timeline.flashT0 !== undefined) {
@@ -1815,10 +1815,11 @@ async function init() {
       }
       /* Screen flash plane + short halo on bezel/keys — same Space Gray base */
       if (screenFlashPlane && screenFlashPlane.material) {
-        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(0.95, bloomFlash * 1.05) : 0;
+        screenFlashPlane.material.color.set(0xffffff);
+        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(1, bloomFlash * 1.2) : 0;
         screenFlashPlane.visible = bloomFlash > 0.02;
-        /* Keep flash ≤ ~35–40% of frame: inset plane */
-        screenFlashPlane.scale.set(0.78, 0.78, 0.78);
+        /* Inset so bloom stays on the panel (~35–40% of frame) */
+        screenFlashPlane.scale.set(0.82, 0.82, 0.82);
       }
       if (screenOverlay) {
         var sp = new THREE.Vector3();
@@ -1826,17 +1827,23 @@ async function init() {
         var sn = new THREE.Vector3(0, 1, 0);
         sn.transformDirection(screenOverlay.matrixWorld).normalize();
         if (sn.dot(camera.position.clone().sub(sp)) < 0) sn.negate();
-        screenBounce.position.copy(sp).addScaledVector(sn, 0.05);
-        screenBounce.target.position.set(sp.x * 0.04, 0.18, sp.z * 0.1);
+        /* Aim bounce at upper keyboard / chin — not the front lip */
+        screenBounce.position.copy(sp).addScaledVector(sn, 0.06);
+        screenBounce.target.position.copy(sp).addScaledVector(sn, -0.35);
+        screenBounce.target.position.y = Math.max(0.14, screenBounce.target.position.y);
         screenBounce.target.updateMatrixWorld();
-        if (bloomFlash > 0.08) {
-          /* Halo on moldura + keyboard during flash */
-          screenBounce.intensity = 2.2 * bloomFlash;
-          screenBounce.distance = 2.0;
-          screenBounce.angle = Math.PI / 16;
-          screenBounce.decay = 2.3;
+        if (bloomFlash > 0.45) {
+          /* Peak: screen plane dominates; tiny chin halo only */
+          screenBounce.intensity = 0.7 * bloomFlash;
+          screenBounce.distance = 1.5;
+          screenBounce.angle = Math.PI / 22;
+          screenBounce.decay = 2.6;
+        } else if (bloomFlash > 0.08) {
+          screenBounce.intensity = 1.4 * bloomFlash;
+          screenBounce.distance = 1.8;
+          screenBounce.angle = Math.PI / 18;
+          screenBounce.decay = 2.4;
         } else {
-          /* Idle: bounce lights keys; readable silhouette */
           screenBounce.intensity = (isMobile ? 2.4 : 2.1) * timeline.figmaP;
           screenBounce.distance = 3.2;
           screenBounce.angle = Math.PI / 12;
@@ -1863,7 +1870,7 @@ async function init() {
     }
     if (studio.glow && studio.glow.material) {
       studio.glow.visible = true;
-      studio.glow.material.opacity = bloomFlash > 0.15 ? 0.12 : 0.36 + 0.1 * timeline.figmaP;
+      studio.glow.material.opacity = bloomFlash > 0.15 ? 0.06 : 0.36 + 0.1 * timeline.figmaP;
     }
     if (studio.contact) {
       studio.contact.visible = true;
