@@ -10,12 +10,12 @@ import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.2.5 — void preto; Space Black; flash localizado.
+  Poytara abertura estúdio v0.2.6 — silhueta legível; flash 250–400ms; void preto.
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v025-20261117235605";
-var CDN_TAG = "v0.2.5";
+var BUILD = "notebook-studio-v026-20261118000438";
+var CDN_TAG = "v0.2.6";
 
 var reduced =
   window.matchMedia &&
@@ -652,11 +652,11 @@ function makeStudioFloor() {
   glowTex.needsUpdate = true;
 
   var glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.6, 1.6),
+    new THREE.PlaneGeometry(2.2, 2.2),
     new THREE.MeshBasicMaterial({
       map: glowTex,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.45,
       blending: THREE.NormalBlending,
       depthWrite: false,
       toneMapped: false,
@@ -721,28 +721,29 @@ function makeParticles(count) {
   var pos = new Float32Array(count * 3);
   var i;
   for (i = 0; i < count; i++) {
-    /* Bias into screen/key light cone (front-right of notebook) */
-    var inCone = Math.random() < 0.72;
+    /* Bias hard into screen light beam (front of lid / over keyboard) */
+    var inCone = Math.random() < 0.82;
     if (inCone) {
-      pos[i * 3] = (Math.random() - 0.15) * 3.2;
-      pos[i * 3 + 1] = Math.random() * 2.4 + 0.08;
-      pos[i * 3 + 2] = (Math.random() - 0.2) * 2.8 + 0.4;
+      pos[i * 3] = (Math.random() - 0.25) * 2.4;
+      pos[i * 3 + 1] = Math.random() * 1.6 + 0.12;
+      pos[i * 3 + 2] = (Math.random() - 0.15) * 2.0 + 0.55;
     } else {
-      pos[i * 3] = (Math.random() - 0.35) * 9;
-      pos[i * 3 + 1] = Math.random() * 4.2 + 0.05;
-      pos[i * 3 + 2] = (Math.random() - 0.45) * 7;
+      pos[i * 3] = (Math.random() - 0.35) * 7;
+      pos[i * 3 + 1] = Math.random() * 3.5 + 0.05;
+      pos[i * 3 + 2] = (Math.random() - 0.45) * 6;
     }
   }
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   var mat = new THREE.PointsMaterial({
-    size: 0.055,
+    size: 0.065,
     map: makeDustTexture(),
     transparent: true,
-    opacity: 0.72,
+    opacity: 0.85,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    color: 0xe8f0ff,
+    color: 0xf0f6ff,
     sizeAttenuation: true,
+    toneMapped: false,
   });
   var pts = new THREE.Points(geo, mat);
   pts.name = "studioDust";
@@ -783,14 +784,14 @@ function upgradeChassisMaterials(root, figmaTex) {
         pn.indexOf("touch_bar") >= 0;
       var baseCol;
       if (isKey) {
-        /* Matte black keys — no white edge, no plastic blue */
-        baseCol = new THREE.Color(0x050506);
+        /* Matte black keys — catch screen bounce, no white edge */
+        baseCol = new THREE.Color(0x080809);
       } else {
-        /* Space Black / Space Gray aluminum */
-        baseCol = new THREE.Color(0x121214);
-        if (m.color) baseCol.lerp(m.color, 0.05);
+        /* Space Gray aluminum — mid v0.2.4↔v0.2.5: dark but readable */
+        baseCol = new THREE.Color(0x1a1b1e);
+        if (m.color) baseCol.lerp(m.color, 0.08);
         if (n.indexOf("main_body") >= 0 || n.indexOf("macbook") >= 0 || n.indexOf("cube") >= 0) {
-          baseCol.set(0x101012);
+          baseCol.set(0x18191c);
         }
       }
       var phys = new THREE.MeshPhysicalMaterial({
@@ -799,12 +800,12 @@ function upgradeChassisMaterials(root, figmaTex) {
         normalMap: isKey ? null : m.normalMap || null,
         roughnessMap: isKey ? null : m.roughnessMap || null,
         metalnessMap: isKey ? null : m.metalnessMap || null,
-        metalness: isKey ? 0.02 : 0.82,
-        roughness: isKey ? 0.92 : 0.42,
-        clearcoat: isKey ? 0 : 0.35,
-        clearcoatRoughness: isKey ? 1 : 0.4,
-        envMapIntensity: isKey ? 0.04 : 0.4,
-        reflectivity: isKey ? 0.05 : 0.45,
+        metalness: isKey ? 0.06 : 0.9,
+        roughness: isKey ? 0.88 : 0.32,
+        clearcoat: isKey ? 0.04 : 0.55,
+        clearcoatRoughness: isKey ? 0.85 : 0.28,
+        envMapIntensity: isKey ? 0.1 : 0.72,
+        reflectivity: isKey ? 0.12 : 0.65,
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
       });
@@ -1107,14 +1108,14 @@ async function init() {
   state.webglOk = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = isMobile ? 1.12 : 1.08;
+  renderer.toneMappingExposure = isMobile ? 1.28 : 1.18;
   renderer.shadowMap.enabled = !state.gpuOffLikely;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setClearColor(0x000000, 1);
 
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.028);
+  scene.fog = new THREE.FogExp2(0x000000, 0.022);
 
   /* ~50–85mm feel */
   var camera = new THREE.PerspectiveCamera(26, 1, 0.05, 200);
@@ -1125,16 +1126,16 @@ async function init() {
     pmrem.compileEquirectangularShader();
     var envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = envTex;
-    scene.environmentIntensity = 0.22;
+    scene.environmentIntensity = 0.38;
     pmrem.dispose();
   } catch (err) {
     setStatus("env-map skipped");
   }
 
-  var hemi = new THREE.HemisphereLight(0x3a4050, 0x000000, 0.08);
+  var hemi = new THREE.HemisphereLight(0x5a6578, 0x000000, 0.12);
   scene.add(hemi);
 
-  var key = new THREE.DirectionalLight(0xf0ece4, 0.22);
+  var key = new THREE.DirectionalLight(0xf2eee6, 0.28);
   key.position.set(4.2, 7.5, 3.2);
   key.castShadow = !state.gpuOffLikely;
   if (key.castShadow) {
@@ -1151,24 +1152,25 @@ async function init() {
   }
   scene.add(key);
 
-  var rim = new THREE.DirectionalLight(0xd8e4f5, 2.8);
+  /* Thin cold rim — silhouette readable without washing Space Gray */
+  var rim = new THREE.DirectionalLight(0xd8e6ff, 3.6);
   rim.position.set(-6.2, 4.6, -6.2);
   scene.add(rim);
 
-  var rimHinge = new THREE.DirectionalLight(0xc8d6ea, 1.8);
+  var rimHinge = new THREE.DirectionalLight(0xc8d6ea, 2.4);
   rimHinge.position.set(4.2, 1.4, -5.2);
   scene.add(rimHinge);
 
-  var rimLid = new THREE.DirectionalLight(0xe4ecf8, 1.6);
+  var rimLid = new THREE.DirectionalLight(0xe8f2ff, 2.2);
   rimLid.position.set(0.5, 5.5, -3.8);
   scene.add(rimLid);
 
-  var fill = new THREE.DirectionalLight(0x2a3038, 0.04);
+  var fill = new THREE.DirectionalLight(0x3a4455, 0.08);
   fill.position.set(-2.5, 1.8, 5.5);
   scene.add(fill);
 
   /* Screen bounce onto keyboard (fake RectArea — CSP-safe) */
-  var screenBounce = new THREE.SpotLight(0xe8f0ff, 0, 3.2, Math.PI / 14, 0.65, 2.1);
+  var screenBounce = new THREE.SpotLight(0xe8f0ff, 0, 3.6, Math.PI / 12, 0.55, 1.9);
   screenBounce.position.set(0, 1.6, 1.1);
   screenBounce.target.position.set(0, 0.08, 0.35);
   scene.add(screenBounce);
@@ -1177,7 +1179,7 @@ async function init() {
   var studio = makeStudioFloor();
   scene.add(studio.group);
 
-  var particleCount = reduced ? 0 : isMobile ? 220 : state.gpuOffLikely ? 320 : 720;
+  var particleCount = reduced ? 0 : isMobile ? 280 : state.gpuOffLikely ? 420 : 780;
   var dust = particleCount > 0 ? makeParticles(particleCount) : null;
   if (dust) {
     scene.add(dust);
@@ -1392,10 +1394,10 @@ async function init() {
       Desktop horizontal (v0.2.3): left display edge ~50%, right side cropped out.
       Mobile: notebook above, info below.
     */
-    var fillH = isMobile ? 0.26 : 0.48;
+    var fillH = isMobile ? 0.30 : 0.48;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? 0.50 : 0.22;
+    var ndcY = isMobile ? 0.46 : 0.22;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
@@ -1434,7 +1436,7 @@ async function init() {
       }
       if (studio.glow && studio.glow.material) {
         studio.glow.visible = true;
-        studio.glow.material.opacity = 0.22 + 0.06 * a;
+        studio.glow.material.opacity = 0.38 + 0.1 * a;
       }
       if (studio.contact && studio.contact.material) {
         studio.contact.visible = true;
@@ -1513,9 +1515,9 @@ async function init() {
       if (useBloom) {
         bloomPass = new UnrealBloomPass(
           new THREE.Vector2(window.innerWidth, window.innerHeight),
-          isMobile || state.gpuOffLikely ? 0.1 : 0.14,
-          0.28,
-          0.88
+          isMobile || state.gpuOffLikely ? 0.14 : 0.16,
+          0.32,
+          0.84
         );
         composer.addPass(bloomPass);
         state.bloomOk = true;
@@ -1557,6 +1559,7 @@ async function init() {
     copySettled: false,
     faceComputed: false,
     flashed: false,
+    flashT0: undefined,
   };
 
   var T_BEAT0 = TIMING.beat0;
@@ -1623,22 +1626,22 @@ async function init() {
 
   function renderFrame() {
     if (bloomPass) {
-      /* Idle: low bloom, vivid UI. Flash: capped local bloom (screen + short halo). */
-      var baseBloom = isMobile || state.gpuOffLikely ? 0.1 : 0.12;
+      /* Idle: light edge bloom on bright UI. Flash: local, capped (~35–40% of frame). */
+      var baseBloom = isMobile || state.gpuOffLikely ? 0.14 : 0.17;
       if (bloomFlash > 0.08) {
-        bloomPass.strength = Math.min(1.55, baseBloom + bloomFlash * 1.35);
-        bloomPass.radius = 0.22;
-        bloomPass.threshold = 0.55;
+        bloomPass.strength = Math.min(1.15, baseBloom + bloomFlash * 0.95);
+        bloomPass.radius = 0.2;
+        bloomPass.threshold = 0.48;
       } else {
         bloomPass.strength = baseBloom;
-        bloomPass.radius = 0.28;
-        bloomPass.threshold = 0.9;
+        bloomPass.radius = 0.3;
+        bloomPass.threshold = 0.82;
       }
     }
     if (vigPass && vigPass.uniforms) {
       if (vigPass.uniforms.time) vigPass.uniforms.time.value = performance.now() * 0.001;
       if (vigPass.uniforms.vignette) {
-        vigPass.uniforms.vignette.value = bloomFlash > 0.08 ? 1.45 : (isMobile || state.gpuOffLikely ? 1.25 : 1.15);
+        vigPass.uniforms.vignette.value = bloomFlash > 0.08 ? 1.35 : (isMobile || state.gpuOffLikely ? 1.2 : 1.1);
       }
     }
     if (composer && state.postOk) {
@@ -1782,10 +1785,10 @@ async function init() {
       var lidE = easeOutBack(lidTl);
       lerpLid(bevels, closedPose, openPose, lidE);
       state.lidPose = "opening";
-      /* Flash when lid ~30–40° open */
-      if (!timeline.flashed && lidTl >= 0.32 && lidTl <= 0.48 && !reduced) {
-        bloomFlash = 1;
+      /* Flash when lid ~30–40° open — timed 250–400ms peak */
+      if (!timeline.flashed && lidTl >= 0.32 && !reduced) {
         timeline.flashed = true;
+        timeline.flashT0 = t;
       }
     } else {
       applyLidPose(bevels, poses, "open");
@@ -1803,11 +1806,19 @@ async function init() {
       if (screenOverlay) {
         screenOverlay.material.opacity = Math.max(timeline.figmaP, bloomFlash * 0.98, 0.001);
       }
-      /* Localized flash: screen plane only. Tiny keyboard kiss after peak decays. */
+      /* Timed flash envelope: plateau ~80ms then fade by ~350ms (250–400ms total) */
+      if (timeline.flashed && timeline.flashT0 !== undefined) {
+        var fAge = Math.max(0, t - timeline.flashT0);
+        if (fAge <= 80) bloomFlash = 1;
+        else if (fAge < 360) bloomFlash = 1 - (fAge - 80) / 280;
+        else bloomFlash = 0;
+      }
+      /* Screen flash plane + short halo on bezel/keys — same Space Gray base */
       if (screenFlashPlane && screenFlashPlane.material) {
-        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(1, bloomFlash * 1.15) : 0;
+        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(0.95, bloomFlash * 1.05) : 0;
         screenFlashPlane.visible = bloomFlash > 0.02;
-        screenFlashPlane.scale.set(0.9, 0.9, 0.9);
+        /* Keep flash ≤ ~35–40% of frame: inset plane */
+        screenFlashPlane.scale.set(0.78, 0.78, 0.78);
       }
       if (screenOverlay) {
         var sp = new THREE.Vector3();
@@ -1815,23 +1826,21 @@ async function init() {
         var sn = new THREE.Vector3(0, 1, 0);
         sn.transformDirection(screenOverlay.matrixWorld).normalize();
         if (sn.dot(camera.position.clone().sub(sp)) < 0) sn.negate();
-        screenBounce.position.copy(sp).addScaledVector(sn, 0.04);
-        screenBounce.target.position.set(sp.x * 0.03, 0.16, sp.z * 0.08);
+        screenBounce.position.copy(sp).addScaledVector(sn, 0.05);
+        screenBounce.target.position.set(sp.x * 0.04, 0.18, sp.z * 0.1);
         screenBounce.target.updateMatrixWorld();
-        if (bloomFlash > 0.35) {
-          /* Peak: no bounce — bloom comes from screenFlashPlane only */
-          screenBounce.intensity = 0;
-        } else if (bloomFlash > 0.08) {
-          /* Short soft halo on keys as flash fades */
-          screenBounce.intensity = 0.55 * bloomFlash;
-          screenBounce.distance = 1.4;
-          screenBounce.angle = Math.PI / 20;
-          screenBounce.decay = 2.8;
+        if (bloomFlash > 0.08) {
+          /* Halo on moldura + keyboard during flash */
+          screenBounce.intensity = 2.2 * bloomFlash;
+          screenBounce.distance = 2.0;
+          screenBounce.angle = Math.PI / 16;
+          screenBounce.decay = 2.3;
         } else {
-          screenBounce.intensity = 1.35 * timeline.figmaP;
-          screenBounce.distance = 2.6;
-          screenBounce.angle = Math.PI / 15;
-          screenBounce.decay = 2.1;
+          /* Idle: bounce lights keys; readable silhouette */
+          screenBounce.intensity = (isMobile ? 2.4 : 2.1) * timeline.figmaP;
+          screenBounce.distance = 3.2;
+          screenBounce.angle = Math.PI / 12;
+          screenBounce.decay = 1.85;
         }
       }
     } else {
@@ -1844,32 +1853,28 @@ async function init() {
       }
       screenBounce.intensity = 0;
     }
-    /* Keep void black; only a whisper of under-notebook glow outside flash */
+    /* Void black + subtle radial under base (never a horizon) */
     if (studio.floorWire) studio.floorWire.visible = false;
     if (studio.ground) {
       studio.ground.visible = true;
-      if (studio.ground.material) studio.ground.material.color.set(0x000000);
-    }
-    if (studio.glow && studio.glow.material) {
-      if (bloomFlash > 0.08) {
-        studio.glow.visible = false;
-        studio.glow.material.opacity = 0;
-      } else {
-        studio.glow.visible = true;
-        studio.glow.material.opacity = 0.2 + 0.05 * timeline.figmaP;
+      if (studio.ground.material && studio.ground.material.color) {
+        studio.ground.material.color.set(0x000000);
       }
     }
-    if (studio.contact) {
-      studio.contact.visible = bloomFlash <= 0.08;
-      if (studio.contact.material) studio.contact.material.opacity = 0.85;
+    if (studio.glow && studio.glow.material) {
+      studio.glow.visible = true;
+      studio.glow.material.opacity = bloomFlash > 0.15 ? 0.12 : 0.36 + 0.1 * timeline.figmaP;
     }
-    key.intensity = bloomFlash > 0.08 ? 0.04 : 0.16;
-    fill.intensity = 0.03;
-    rimLid.intensity = bloomFlash > 0.08 ? 1.8 : 1.35;
-    rim.intensity = bloomFlash > 0.08 ? 2.6 : 2.2;
-    rimHinge.intensity = bloomFlash > 0.08 ? 1.6 : 1.4;
-    /* Slower decay so capture stills catch the screen peak */
-    bloomFlash *= 0.92;
+    if (studio.contact) {
+      studio.contact.visible = true;
+      if (studio.contact.material) studio.contact.material.opacity = 0.8;
+    }
+    /* Stable key/fill — same Space Gray in flash and idle (no silver wash) */
+    key.intensity = 0.28;
+    fill.intensity = 0.08;
+    rimLid.intensity = bloomFlash > 0.08 ? 2.8 : 2.2;
+    rim.intensity = bloomFlash > 0.08 ? 4.0 : 3.6;
+    rimHinge.intensity = bloomFlash > 0.08 ? 2.8 : 2.4;
 
     /* Camera: enter dolly → hold → face+zoom frontal (never scale model) */
     if (t < T_ENTER1) {
@@ -1963,13 +1968,17 @@ async function init() {
     camera.position.copy(camFace);
     camera.lookAt(camFaceTarget);
     applyFinalStudioLook(1);
-    bloomFlash *= 0.9;
-    screenBounce.intensity = isMobile ? 1.8 : 1.6;
-    if (studio.glow) {
-      studio.glow.visible = false;
-      studio.glow.material.opacity = 0;
+    bloomFlash = 0;
+    screenBounce.intensity = isMobile ? 2.5 : 2.2;
+    if (studio.glow && studio.glow.material) {
+      studio.glow.visible = true;
+      studio.glow.material.opacity = 0.4;
     }
     if (screenOverlay) screenOverlay.material.opacity = 1;
+    if (screenFlashPlane) {
+      screenFlashPlane.visible = false;
+      screenFlashPlane.material.opacity = 0;
+    }
     figma.paintFrame(1);
     if (titleEl) titleEl.textContent = titleFinal;
     if (hintEl) hintEl.textContent = hintFinal;
@@ -1993,8 +2002,10 @@ async function init() {
     dust.geometry.attributes.position.needsUpdate = true;
     /* Prefer particles in the screen light cone */
     if (dust.material) {
-      dust.material.opacity = 0.45 + 0.4 * Math.min(1, screenBounce.intensity / 3);
-      dust.material.size = state.gpuOffLikely || isMobile ? 0.07 : 0.05;
+      var live = Math.max(timeline.figmaP || 0, bloomFlash, screenBounce.intensity / 2.5);
+      dust.material.opacity = 0.35 + 0.55 * Math.min(1, live);
+      dust.material.size = state.gpuOffLikely || isMobile ? 0.085 : 0.062;
+      dust.visible = live > 0.05 || timeline.done;
     }
   }
 
@@ -2025,8 +2036,9 @@ async function init() {
     var next = Math.max(0, Number(ms) || 0);
     if (next < state.captureTime - 1) {
       timeline.done = false;
-      timeline.faceComputed = false;
       timeline.flashed = false;
+      timeline.flashT0 = undefined;
+      timeline.faceComputed = false;
       timeline.copyShown = false;
       timeline.copySettled = false;
       timeline.lastBeat = -1;
@@ -2064,7 +2076,7 @@ async function init() {
   });
   window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · studio v0.2.5 · stripeFix=" +
+    "ready · studio v0.2.6 · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
       (state.dofOk ? " · dof" : " · no-dof") +
