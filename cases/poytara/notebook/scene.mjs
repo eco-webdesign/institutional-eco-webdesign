@@ -15,7 +15,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v022-20261117222903";
+var BUILD = "notebook-studio-v022-20261117223347";
 var CDN_TAG = "v0.2.2";
 
 var reduced =
@@ -526,8 +526,11 @@ function bindScreenTexture(root, figma) {
     transparent: true,
     opacity: 0,
   });
-  figma.texture.wrapS = THREE.ClampToEdgeWrapping;
+  /* Horizontal un-mirror via UV (not mesh.scale — scale flips face-right framing) */
+  figma.texture.wrapS = THREE.RepeatWrapping;
   figma.texture.wrapT = THREE.ClampToEdgeWrapping;
+  figma.texture.repeat.set(-1, 1);
+  figma.texture.offset.set(1, 0);
   figma.texture.flipY = true;
   figma.texture.colorSpace = THREE.SRGBColorSpace;
   figma.texture.needsUpdate = true;
@@ -535,8 +538,6 @@ function bindScreenTexture(root, figma) {
   var overlay = new THREE.Mesh(plane, mat);
   overlay.name = "screenOverlay";
   overlay.position.set((xmin + xmax) / 2, yAvg + 0.0015, (zmin + zmax) / 2);
-  /* Un-mirror horizontal after rotateY(π) so chrome sits top-left, text LTR */
-  overlay.scale.x = -1;
   overlay.renderOrder = 3;
   screenMesh.visible = false;
   /* Hide thick gray bezel/glass leftovers around the panel */
@@ -547,7 +548,7 @@ function bindScreenTexture(root, figma) {
     }
   });
   (screenMesh.parent || root).add(overlay);
-  state.stripeFix = "uv-roty-pi-scalex-neg-thin-bezel";
+  state.stripeFix = "uv-roty-pi-repeatX-neg-thin-bezel";
   return overlay;
 }
 
