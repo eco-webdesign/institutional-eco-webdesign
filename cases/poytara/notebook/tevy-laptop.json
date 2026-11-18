@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "slug": "laptop",
+  "name": "Laptop",
+  "category": "props",
+  "tags": [
+    "laptop",
+    "notebook",
+    "computer",
+    "aluminium",
+    "keyboard",
+    "trackpad",
+    "screen",
+    "tech",
+    "desk",
+    "office",
+    "home office",
+    "interior",
+    "prop"
+  ],
+  "description": "A 14-inch silver aluminium laptop, 31 x 22 cm and 16 mm thick closed, shown open. Bead-blasted shell with a bright cut lid edge, black keys with light legends, a glass trackpad, speaker perforation and USB-C ports; the blank screen is ready for an image or video.",
+  "license": "CC0-1.0",
+  "version": 1,
+  "changes": "First release.",
+  "created": "2026-11-01",
+  "updated": "2026-11-01",
+  "units": "meters",
+  "up": "+Y",
+  "forward": "+Z",
+  "dimensions": {
+    "x": 0.312,
+    "y": 0.217,
+    "z": 0.302
+  },
+  "parts": [
+    "lid"
+  ],
+  "animations": [],
+  "wind": false,
+  "preview": "/models/laptop/v1/preview.webp",
+  "files": [
+    {
+      "lod": 0,
+      "path": "/models/laptop/v1/lod0.glb",
+      "bytes": 2878480,
+      "sha256": "6fa81683f2c21d0956d186a45c5b8a038bd26e94fd8a2aaa7194e10bf1ecfe29",
+      "triangles": 22122
+    },
+    {
+      "lod": 1,
+      "path": "/models/laptop/v1/lod1.glb",
+      "bytes": 865916,
+      "sha256": "b60961dd3b698cfe4004539bf86b2d2aeb07b90444705f5d57756163157faa07",
+      "triangles": 9514
+    },
+    {
+      "lod": 2,
+      "path": "/models/laptop/v1/lod2.glb",
+      "bytes": 229032,
+      "sha256": "bbb3847debe264ed30e71998c9c444d80381e09d813b0e1ce615a9a724b694af",
+      "triangles": 398
+    }
+  ],
+  "versions": [
+    {
+      "version": 1,
+      "date": "2026-11-01",
+      "changes": "First release.",
+      "preview": "/models/laptop/v1/preview.webp",
+      "files": [
+        {
+          "lod": 0,
+          "path": "/models/laptop/v1/lod0.glb",
+          "bytes": 2878480,
+          "sha256": "6fa81683f2c21d0956d186a45c5b8a038bd26e94fd8a2aaa7194e10bf1ecfe29",
+          "triangles": 22122
+        },
+        {
+          "lod": 1,
+          "path": "/models/laptop/v1/lod1.glb",
+          "bytes": 865916,
+          "sha256": "b60961dd3b698cfe4004539bf86b2d2aeb07b90444705f5d57756163157faa07",
+          "triangles": 9514
+        },
+        {
+          "lod": 2,
+          "path": "/models/laptop/v1/lod2.glb",
+          "bytes": 229032,
+          "sha256": "bbb3847debe264ed30e71998c9c444d80381e09d813b0e1ce615a9a724b694af",
+          "triangles": 398
+        }
+      ]
+    }
+  ]
+}

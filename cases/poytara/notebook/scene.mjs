@@ -8,14 +8,15 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
 import { ShaderPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/ShaderPass.js/+esm";
 import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/OutputPass.js/+esm";
 import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js/+esm";
+import { RGBELoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/RGBELoader.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.2.6 — silhueta legível; flash 250–400ms; void preto.
-  CSP: sem blob/workers/Draco. HUD só ?debug=1.
+  Poytara abertura estúdio v0.3.0 — tevy CC0 alumínio HQ; HDRI; rim/reflexo/flash/mobile.
+  CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta.
 */
 
-var BUILD = "notebook-studio-v026-20261118001640";
-var CDN_TAG = "v0.2.6";
+var BUILD = "notebook-studio-v030-20261118121321";
+var CDN_TAG = "v0.3.0";
 
 var reduced =
   window.matchMedia &&
@@ -49,7 +50,8 @@ var scriptEl =
   document.querySelector('script[type="module"][src*="poytara/notebook/scene"]');
 var scriptSrc = (scriptEl && scriptEl.src) || "";
 var cdnBase;
-if (scriptSrc.indexOf("cases/poytara/notebook/") >= 0) {
+if (scriptSrc.indexOf("cases/poytara/notebook/") >= 0 || /\/scene\.mjs(\?|$)/.test(scriptSrc)) {
+  /* Same-folder assets (jsDelivr path OR local harness) */
   cdnBase = scriptSrc.replace(/scene\.mjs(\?.*)?$/, "");
 } else {
   cdnBase =
@@ -60,8 +62,14 @@ if (scriptSrc.indexOf("cases/poytara/notebook/") >= 0) {
     CDN_TAG +
     "/cases/poytara/notebook/";
 }
-var glbUrl = cdnBase + "macbook-only.glb";
+function isMobileEarly() {
+  return Math.min(window.innerWidth || 1440, window.innerHeight || 900) <= 430 ||
+    (window.innerWidth || 1440) <= 430;
+}
+
+var glbUrl = cdnBase + (isMobileEarly() ? "laptop-generic-mobile.glb" : "laptop-generic.glb");
 var posesUrl = cdnBase + "lid-poses.json";
+var hdriUrl = cdnBase + "studio-small-08-1k.hdr";
 
 document.body.setAttribute("data-mode", mode);
 document.body.classList.toggle("is-debug", debugHud);
@@ -101,7 +109,7 @@ var state = {
   postOk: false,
   gpuOffLikely: false,
   still: reduced || mode === "case",
-  modelSource: "tympanus-codrops-glb",
+  modelSource: "tevy-laptop-v1-cc0",
   mode: mode,
   beat: 0,
   scrollLocked: true,
@@ -501,122 +509,62 @@ function createFigmaTexture() {
 }
 
 function bindScreenTexture(root, figma) {
-  var screenMesh = root.getObjectByName("Object_7");
+  var screenMesh = root.getObjectByName("screen");
   if (!screenMesh) {
     return null;
   }
 
-  var posAttr = screenMesh.geometry.attributes.position;
-  var xmin = Infinity;
-  var xmax = -Infinity;
-  var zmin = Infinity;
-  var zmax = -Infinity;
-  var yAvg = 0;
-  var i;
-  for (i = 0; i < posAttr.count; i++) {
-    var x = posAttr.getX(i);
-    var y = posAttr.getY(i);
-    var z = posAttr.getZ(i);
-    if (x < xmin) xmin = x;
-    if (x > xmax) xmax = x;
-    if (z < zmin) zmin = z;
-    if (z > zmax) zmax = z;
-    yAvg += y;
-  }
-  yAvg /= Math.max(posAttr.count, 1);
-
-  var pw = xmax - xmin;
-  var ph = zmax - zmin;
-  var plane = new THREE.PlaneGeometry(pw, ph, 1, 1);
-  /* Lid panel is XZ: lay flat, then 180° in-plane so chrome/top reads upright (v0.2.1 was inverted). */
-  plane.rotateX(-Math.PI / 2);
-  plane.rotateY(Math.PI);
+  /*
+    Tevy screen: unit quad on XZ, normal -Y, node scale ~0.148.
+    Overlay inherits lid motion as child of `screen`.
+  */
+  var plane = new THREE.PlaneGeometry(2, 1.2499160766601562, 1, 1);
+  plane.rotateX(Math.PI / 2);
   var mat = new THREE.MeshBasicMaterial({
     map: figma.texture,
     toneMapped: false,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     transparent: true,
     opacity: 0,
   });
-  /* Horizontal un-mirror via UV (not mesh.scale — scale flips face-right framing) */
-  figma.texture.wrapS = THREE.RepeatWrapping;
+  figma.texture.wrapS = THREE.ClampToEdgeWrapping;
   figma.texture.wrapT = THREE.ClampToEdgeWrapping;
-  figma.texture.repeat.set(-1, 1);
-  figma.texture.offset.set(1, 0);
   figma.texture.flipY = true;
   figma.texture.colorSpace = THREE.SRGBColorSpace;
   figma.texture.needsUpdate = true;
 
   var overlay = new THREE.Mesh(plane, mat);
   overlay.name = "screenOverlay";
-  overlay.position.set((xmin + xmax) / 2, yAvg + 0.0015, (zmin + zmax) / 2);
+  /* Slight push along -Y (screen normal) so it sits above glass */
+  overlay.position.set(0, -0.004, 0);
   overlay.renderOrder = 3;
-  screenMesh.visible = false;
+  screenMesh.add(overlay);
 
-  /* Darken glass/bezel meshes instead of hiding — keeps chin/hinge bridge */
-  ["Object_4", "Object_5", "Object_6", "Object_8"].forEach(function (name) {
-    var o = root.getObjectByName(name);
-    if (!o || !o.material) {
-      return;
-    }
-    o.visible = true;
-    var mats = Array.isArray(o.material) ? o.material : [o.material];
-    mats.forEach(function (m) {
-      if (!m) return;
-      if (m.color) m.color.set(0x0a0a0b);
-      if (m.emissive) {
-        m.emissive.set(0x000000);
-        m.emissiveIntensity = 0;
-      }
-      if (m.metalness !== undefined) m.metalness = 0.9;
-      if (m.roughness !== undefined) m.roughness = 0.35;
-      if (m.opacity !== undefined) {
-        m.transparent = false;
-        m.opacity = 1;
-      }
-      m.needsUpdate = true;
-    });
-  });
-
-  /* Extra black chin strip under panel so screen never floats */
-  var chin = new THREE.Mesh(
-    new THREE.BoxGeometry(pw * 1.04, 0.012, ph * 0.14),
-    new THREE.MeshStandardMaterial({
-      color: 0x141416,
-      metalness: 0.9,
-      roughness: 0.4,
-      emissive: new THREE.Color(0x000000),
-      emissiveIntensity: 0,
-    })
-  );
-  chin.name = "screenChin";
-  chin.position.set((xmin + xmax) / 2, yAvg - 0.004, zmin + ph * 0.02);
-  chin.renderOrder = 2;
-  (screenMesh.parent || root).add(chin);
-
-  /* Side rails of the lid so moldura reads against void */
-  var railMat = new THREE.MeshStandardMaterial({
-    color: 0x2a2a2c,
-    metalness: 0.92,
-    roughness: 0.34,
+  /* Reflective dark glass + emissive idle (mock drives brightness) */
+  var glass = new THREE.MeshPhysicalMaterial({
+    color: 0x050506,
+    metalness: 0.05,
+    roughness: 0.08,
+    transmission: 0.0,
+    thickness: 0.02,
+    clearcoat: 1,
+    clearcoatRoughness: 0.06,
+    envMapIntensity: 1.15,
     emissive: new THREE.Color(0x000000),
     emissiveIntensity: 0,
+    side: THREE.FrontSide,
   });
-  var railL = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.02, 0.01, ph * 1.02), railMat);
-  railL.name = "screenRailL";
-  railL.position.set(xmin - pw * 0.005, yAvg + 0.001, (zmin + zmax) / 2);
-  var railR = railL.clone();
-  railR.name = "screenRailR";
-  railR.position.x = xmax + pw * 0.005;
-  var railT = new THREE.Mesh(new THREE.BoxGeometry(pw * 1.04, 0.01, ph * 0.03), railMat.clone());
-  railT.name = "screenRailT";
-  railT.position.set((xmin + xmax) / 2, yAvg + 0.001, zmax + ph * 0.01);
-  (screenMesh.parent || root).add(railL);
-  (screenMesh.parent || root).add(railR);
-  (screenMesh.parent || root).add(railT);
+  screenMesh.material = glass;
+  screenMesh.visible = true;
 
-  (screenMesh.parent || root).add(overlay);
-  state.stripeFix = "uv-roty-pi-chin-bezel-v024";
+  /* Bezel / lid shell already separate — deepen lid_shell edge readability */
+  var lidShell = root.getObjectByName("lid_shell");
+  if (lidShell && lidShell.material) {
+    var lm = lidShell.material;
+    if (lm.color) lm.color.multiplyScalar(0.92);
+  }
+
+  state.stripeFix = "tevy-screen-xz-v030";
   return overlay;
 }
 
@@ -691,12 +639,33 @@ function makeStudioFloor() {
   floorWire.name = "floorWire";
   group.add(floorWire);
 
+  var softRefl = new THREE.Mesh(
+    new THREE.CircleGeometry(1.55, 64),
+    new THREE.MeshPhysicalMaterial({
+      color: 0x050608,
+      metalness: 0.98,
+      roughness: 0.22,
+      envMapIntensity: 0.62,
+      clearcoat: 0.8,
+      clearcoatRoughness: 0.3,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+    })
+  );
+  softRefl.rotation.x = -Math.PI / 2;
+  softRefl.position.y = 0.0006;
+  softRefl.name = "floorSoftReflection";
+  softRefl.receiveShadow = true;
+  group.add(softRefl);
+
   return {
     group: group,
     floorWire: floorWire,
     ground: ground,
     contact: contact,
     glow: glow,
+    softRefl: softRefl,
   };
 }
 
@@ -735,10 +704,10 @@ function makeParticles(count) {
   }
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   var mat = new THREE.PointsMaterial({
-    size: 0.065,
+    size: 0.045,
     map: makeDustTexture(),
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.42,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     color: 0xf0f6ff,
@@ -756,7 +725,11 @@ function upgradeChassisMaterials(root, figmaTex) {
     if (!o.isMesh || !o.material) {
       return;
     }
-    if (o.name === "screenOverlay") {
+    if (o.name === "screenOverlay" || o.name === "screenFlashPlane") {
+      return;
+    }
+    if (o.name === "screen") {
+      /* Glass already set in bindScreenTexture */
       return;
     }
     var mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -765,52 +738,33 @@ function upgradeChassisMaterials(root, figmaTex) {
         return m;
       }
       var n = (o.name || "").toLowerCase();
-      var pn = "";
-      var cur = o.parent;
-      var depth = 0;
-      while (cur && depth < 6) {
-        pn += " " + String(cur.name || "").toLowerCase();
-        cur = cur.parent;
-        depth++;
-      }
-      var isKey =
-        n.indexOf("key") >= 0 ||
-        n.indexOf("deck") >= 0 ||
-        n.indexOf("keyboard") >= 0 ||
-        n.indexOf("caps") >= 0 ||
-        n.indexOf("touch_bar") >= 0 ||
-        pn.indexOf("keyboard") >= 0 ||
-        pn.indexOf("caps_lock") >= 0 ||
-        pn.indexOf("touch_bar") >= 0;
-      var baseCol;
-      if (isKey) {
-        /* Matte black keys — catch screen bounce, no white edge */
-        baseCol = new THREE.Color(0x080809);
-      } else {
-        /* Space Gray aluminum — mid v0.2.4↔v0.2.5: dark but readable */
-        baseCol = new THREE.Color(0x1a1b1e);
-        if (m.color) baseCol.lerp(m.color, 0.08);
-        if (n.indexOf("main_body") >= 0 || n.indexOf("macbook") >= 0 || n.indexOf("cube") >= 0) {
-          baseCol.set(0x18191c);
-        }
-      }
+      var isBase = n === "base" || n.indexOf("base") >= 0;
+      var isLid = n === "lid_shell" || n.indexOf("lid") >= 0;
+      /* Dark anodized aluminum — maps keep key legends / bead-blast */
+      var baseCol = new THREE.Color(0x1c1d21);
+      if (m.color) baseCol.lerp(m.color, 0.18);
+      if (isLid) baseCol.set(0x191a1e);
       var phys = new THREE.MeshPhysicalMaterial({
         color: baseCol,
-        map: isKey ? null : m.map || null,
-        normalMap: isKey ? null : m.normalMap || null,
-        roughnessMap: isKey ? null : m.roughnessMap || null,
-        metalnessMap: isKey ? null : m.metalnessMap || null,
-        metalness: isKey ? 0.06 : 0.9,
-        roughness: isKey ? 0.88 : 0.32,
-        clearcoat: isKey ? 0.04 : 0.55,
-        clearcoatRoughness: isKey ? 0.85 : 0.28,
-        envMapIntensity: isKey ? 0.1 : 0.72,
-        reflectivity: isKey ? 0.12 : 0.65,
+        map: m.map || null,
+        normalMap: m.normalMap || null,
+        roughnessMap: m.roughnessMap || null,
+        metalnessMap: m.metalnessMap || null,
+        aoMap: m.aoMap || null,
+        metalness: 0.92,
+        roughness: isBase ? 0.36 : 0.3,
+        clearcoat: 0.42,
+        clearcoatRoughness: 0.32,
+        envMapIntensity: 0.55,
+        reflectivity: 0.7,
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
       });
       if (phys.map) {
         phys.map.colorSpace = THREE.SRGBColorSpace;
+      }
+      if (phys.aoMap && phys.aoMap !== phys.map) {
+        /* Shared UV0 */
       }
       return phys;
     });
@@ -1108,7 +1062,7 @@ async function init() {
   state.webglOk = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = isMobile ? 1.28 : 1.18;
+  renderer.toneMappingExposure = isMobile ? 1.38 : 1.2;
   renderer.shadowMap.enabled = !state.gpuOffLikely;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setClearColor(0x000000, 1);
@@ -1121,15 +1075,12 @@ async function init() {
   var camera = new THREE.PerspectiveCamera(26, 1, 0.05, 200);
   camera.position.set(6.4, 3.8, 7.6);
 
+  var pmrem = null;
   try {
-    var pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem = new THREE.PMREMGenerator(renderer);
     pmrem.compileEquirectangularShader();
-    var envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environment = envTex;
-    scene.environmentIntensity = 0.38;
-    pmrem.dispose();
   } catch (err) {
-    setStatus("env-map skipped");
+    pmrem = null;
   }
 
   var hemi = new THREE.HemisphereLight(0x5a6578, 0x000000, 0.12);
@@ -1152,16 +1103,16 @@ async function init() {
   }
   scene.add(key);
 
-  /* Thin cold rim — silhouette readable without washing Space Gray */
-  var rim = new THREE.DirectionalLight(0xd8e6ff, 3.6);
+  /* Thin cold rim — mid 0.2.4↔0.2.5: readable silhouette, no silver wash */
+  var rim = new THREE.DirectionalLight(0xd8e6ff, isMobile ? 4.1 : 3.4);
   rim.position.set(-6.2, 4.6, -6.2);
   scene.add(rim);
 
-  var rimHinge = new THREE.DirectionalLight(0xc8d6ea, 2.4);
+  var rimHinge = new THREE.DirectionalLight(0xc8d6ea, isMobile ? 2.8 : 2.3);
   rimHinge.position.set(4.2, 1.4, -5.2);
   scene.add(rimHinge);
 
-  var rimLid = new THREE.DirectionalLight(0xe8f2ff, 2.2);
+  var rimLid = new THREE.DirectionalLight(0xe8f2ff, isMobile ? 2.6 : 2.15);
   rimLid.position.set(0.5, 5.5, -3.8);
   scene.add(rimLid);
 
@@ -1179,7 +1130,7 @@ async function init() {
   var studio = makeStudioFloor();
   scene.add(studio.group);
 
-  var particleCount = reduced ? 0 : isMobile ? 280 : state.gpuOffLikely ? 420 : 780;
+  var particleCount = reduced ? 0 : isMobile ? 160 : state.gpuOffLikely ? 240 : 420;
   var dust = particleCount > 0 ? makeParticles(particleCount) : null;
   if (dust) {
     scene.add(dust);
@@ -1233,6 +1184,32 @@ async function init() {
     });
   }
 
+  /* Studio HDRI — reflections only; background stays pure black */
+  if (pmrem) {
+    try {
+      var hdrTex = await new RGBELoader(manager).loadAsync(hdriUrl);
+      hdrTex.mapping = THREE.EquirectangularReflectionMapping;
+      var envRT = pmrem.fromEquirectangular(hdrTex);
+      scene.environment = envRT.texture;
+      scene.environmentIntensity = isMobile ? 0.26 : 0.2;
+      scene.background = new THREE.Color(0x000000);
+      hdrTex.dispose();
+      pmrem.dispose();
+      state.envSource = "polyhaven-studio-small-08";
+    } catch (err) {
+      console.warn("hdri-load", err);
+      try {
+        var envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        scene.environment = envTex;
+        scene.environmentIntensity = 0.32;
+        pmrem.dispose();
+        state.envSource = "room-fallback";
+      } catch (err2) {
+        setStatus("env-map skipped");
+      }
+    }
+  }
+
   var loader = new GLTFLoader(manager);
   var gltf;
   try {
@@ -1246,11 +1223,15 @@ async function init() {
   var root = gltf.scene;
   state.phonesStripped = stripPhones(root);
 
-  var macbook = root.getObjectByName("macbook") || root;
+  /* Real-world meters → scene units (~3.1 wide like prior framing) */
+  var MODEL_SCALE = 10;
+  root.scale.setScalar(MODEL_SCALE);
+
+  var macbook = root.getObjectByName("laptop") || root;
   macbook.position.set(0, 0, 0);
   macbook.rotation.set(0, 0, 0);
 
-  var bevels = root.getObjectByName("Bevels_2");
+  var bevels = root.getObjectByName("lid");
   applyLidPose(bevels, poses, "closed");
   state.lidPose = "closed";
 
@@ -1394,16 +1375,17 @@ async function init() {
       Desktop horizontal (v0.2.3): left display edge ~50%, right side cropped out.
       Mobile: notebook above, info below.
     */
-    var fillH = isMobile ? 0.30 : 0.48;
+    var fillH = isMobile ? 0.28 : 0.48;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? 0.46 : 0.22;
+    var ndcY = isMobile ? 0.58 : 0.22;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
-      camFaceTarget.copy(center).addScaledVector(screenUp, -vertShift * 0.08);
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.1);
-      camFace.addScaledVector(screenUp, faceDist * 0.1);
+      /* Whole notebook above copy block */
+      camFaceTarget.copy(center).addScaledVector(screenUp, vertShift * 0.55);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 1.05);
+      camFace.addScaledVector(screenUp, faceDist * 0.22);
     } else {
       var leftEdge = new THREE.Vector3()
         .copy(center)
@@ -1441,6 +1423,10 @@ async function init() {
       if (studio.contact && studio.contact.material) {
         studio.contact.visible = true;
         studio.contact.material.opacity = 0.75;
+      }
+      if (studio.softRefl && studio.softRefl.material) {
+        studio.softRefl.visible = true;
+        studio.softRefl.material.opacity = 0.28 + 0.16 * a;
       }
     }
     if (screenOverlay && screenOverlay.material) {
@@ -1587,7 +1573,7 @@ async function init() {
     /* Desktop: left black. Mobile: below notebook with clear gap. */
     if (isMobile) {
       beatCopy.style.top = "auto";
-      beatCopy.style.bottom = "5%";
+      beatCopy.style.bottom = "3%";
       beatCopy.style.left = "8%";
       beatCopy.style.right = "8%";
       beatCopy.style.maxWidth = "84%";
@@ -1881,12 +1867,16 @@ async function init() {
       studio.contact.visible = true;
       if (studio.contact.material) studio.contact.material.opacity = 0.8;
     }
-    /* Stable key/fill — same Space Gray in flash and idle (no silver wash) */
-    key.intensity = 0.28;
-    fill.intensity = 0.08;
-    rimLid.intensity = bloomFlash > 0.08 ? 2.8 : 2.2;
-    rim.intensity = bloomFlash > 0.08 ? 4.0 : 3.6;
-    rimHinge.intensity = bloomFlash > 0.08 ? 2.8 : 2.4;
+    if (studio.softRefl && studio.softRefl.material) {
+      studio.softRefl.visible = true;
+      studio.softRefl.material.opacity = bloomFlash > 0.15 ? 0.12 : 0.34 + 0.08 * timeline.figmaP;
+    }
+    /* Stable key/fill — same aluminum in flash and idle (no silver wash) */
+    key.intensity = isMobile ? 0.34 : 0.28;
+    fill.intensity = isMobile ? 0.12 : 0.08;
+    rimLid.intensity = bloomFlash > 0.08 ? (isMobile ? 3.0 : 2.6) : (isMobile ? 2.6 : 2.15);
+    rim.intensity = bloomFlash > 0.08 ? (isMobile ? 4.4 : 3.8) : (isMobile ? 4.1 : 3.4);
+    rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 3.0 : 2.6) : (isMobile ? 2.8 : 2.3);
 
     /* Camera: enter dolly → hold → face+zoom frontal (never scale model) */
     if (t < T_ENTER1) {

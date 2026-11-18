@@ -1,37 +1,41 @@
-# Atribuição · Codrops / Tympanus Device Showcase
+# Atribuição · Poytara notebook estúdio v0.3.0
 
-## Código / demo base
-
-| Item | Valor |
-|---|---|
-| Tutorial | [Interactive 3D Device Showcase with Threepipe](https://tympanus.net/codrops/2024/08/07/interactive-3d-device-showcase-with-threepipe/) (Codrops / Tympanus) |
-| Demo live | https://tympanus.net/Tutorials/DeviceShowcase/ |
-| Repo | [repalash/threepipe-device-mockup-codrops](https://github.com/repalash/threepipe-device-mockup-codrops) |
-| Autor do demo | Palash Bansal (repalash) |
-| Licença do repo | **MIT** — ver `LICENSE-MIT-repalash.txt` |
-| Codrops | Conteúdo Codrops tipicamente free para uso pessoal/comercial **com atribuição**; manter créditos Tympanus/Codrops + autor |
-
-Esta prova **não** embute o runtime Threepipe. Porta o **asset GLB** do tutorial para Three.js vanilla (OrbitControls + soft-gpu / reduced-motion / fallback do harness Poytara).
-
-## Modelo 3D (Sketchfab → GLB do tutorial)
+## Modelo 3D (genérico alumínio)
 
 | Peça | Origem | Licença |
 |---|---|---|
-| MacBook Pro 13″ 2020 | [timblewee no Sketchfab](https://sketchfab.com/3d-models/macbook-pro-13-inch-2020-efab224280fd4c3993c808107f7c0b38) | **CC-BY-4.0** |
-| iPhone 15 Pro Max | [polyman no Sketchfab](https://sketchfab.com/3d-models/apple-iphone-15-pro-max-black-df17520841214c1792fb8a44c6783ee7) | **CC-BY-4.0** (presente no GLB original do tutorial; **removido** nesta prova) |
+| Laptop 14″ (LOD0 / LOD1) | [tevy.dev/models/laptop](https://tevy.dev/models/laptop) v1 (2026-11-01) | **CC0-1.0** |
+| Arquivo pinado | `https://tevy.dev/models/laptop/v1/lod0.glb` (sha256 `6fa81683…`) | CC0 |
+| Mobile | tevy LOD1 → reexport CSP | CC0 |
 
-## Asset nesta pasta
+Reexport CSP (este pacote): `gltf-transform` ktxdecompress + dequantize (sem `EXT_meshopt_compression` / `KHR_texture_basisu` / Draco). AO bake Blender Cycles (mapa multiplicado no albedo). Metadados: `tevy-laptop.json`. Texto CC0: `LICENSE-CC0.txt`.
+
+Poly Haven Classic Laptop (**CC0**) foi avaliado e **não usado** (estilo retro bege 1990s, fora do look alumínio HQ).
+
+## HDRI (só reflexos)
+
+| Peça | Origem | Licença |
+|---|---|---|
+| Studio Small 08 1K HDR | [polyhaven.com/a/studio_small_08](https://polyhaven.com/a/studio_small_08) · Sergej Majboroda | **CC0** (política Poly Haven) |
+| Arquivo | `studio-small-08-1k.hdr` | CC0 |
+
+Fundo da cena permanece preto puro; o HDRI alimenta só `scene.environment` (intensidade baixa).
+
+## Código / demo base (histórico)
+
+| Item | Valor |
+|---|---|
+| Tutorial (estrutura de abertura) | [Codrops Device Showcase](https://tympanus.net/codrops/2024/08/07/interactive-3d-device-showcase-with-threepipe/) |
+| Repo demo | [repalash/threepipe-device-mockup-codrops](https://github.com/repalash/threepipe-device-mockup-codrops) · **MIT** (`LICENSE-MIT-repalash.txt`) |
+
+A partir de **v0.3.0** o GLB MacBook (Sketchfab CC-BY / trade dress Apple) **não** entra mais no pacote. Runtime: Three.js vanilla + jsDelivr pin.
+
+## Assets nesta pasta
 
 | Arquivo | Notas |
 |---|---|
-| `macbook-only.glb` (~1.19 MB) | Extraído de `tabletop_macbook_iphone.glb` (tutorial, ~12 MB). Subárvore `iphone` **removida**; só `macbook`. Draco mantido. |
-| `lid-poses.json` | Poses `closed` / `hover` / `open` do `TransformAnimationPlugin` (Bevels_2) no GLB original Threepipe/WebGI. |
-
-## Risco Apple / publicação
-
-Silhueta MacBook = trademark / trade dress. Autorizado só como **base da prova** no Agent Store. Clearance antes de CDN / case Interago.
-
-## Eco packaging (v0.1.3+)
-
-- `macbook-only.glb` reexportado **sem** `KHR_draco_mesh_compression` (CSP App/Render sem `blob:` / workers).
-- Texturas do material em `macbook-tex-0.png` / `macbook-tex-1.png` (https no mesmo path jsDelivr; não embutidas como blob).
+| `laptop-generic.glb` | LOD0 ~3.5 MB, PNG embutidos 2K, sem compressão GPU |
+| `laptop-generic-mobile.glb` | LOD1 ~1.1 MB, texturas 1K |
+| `lid-poses.json` | closed / hover / open no nó `lid` |
+| `studio-small-08-1k.hdr` | reflexos estúdio |
+| `scene.mjs` | timeline TIMING herdada de v0.2.6; cena/materiais/luz v0.3.0 |
