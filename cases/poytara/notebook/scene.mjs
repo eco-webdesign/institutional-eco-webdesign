@@ -10,13 +10,13 @@ import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.2.1 — face-right + ultra cinema (Apple studio black).
-  Frame final: notebook frontal à direita (crop), metade esquerda preta.
-  Bloom flash na tela, partículas, MeshPhysical, ACES. CSP: sem blob/workers/Draco.
+  Poytara abertura estúdio v0.2.2 — face-right + cinema (lapidado).
+  Tela Figma UV correta; framing com margem; mock Poytara brilhante; HUD só ?debug=1.
+  CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v021-20261117220210";
-var CDN_TAG = "v0.2.1";
+var BUILD = "notebook-studio-v022-20261117222110";
+var CDN_TAG = "v0.2.2";
 
 var reduced =
   window.matchMedia &&
@@ -73,6 +73,18 @@ if (beatCopy) {
   beatCopy.dataset.pos = copyPos;
   beatCopy.hidden = false;
   beatCopy.style.opacity = "0";
+  /* One launch line only — drop duplicate [A CONFIRMAR] note */
+  var tagsNote = beatCopy.querySelector(".pyOpen__tagsNote");
+  if (tagsNote && tagsNote.parentNode) {
+    tagsNote.parentNode.removeChild(tagsNote);
+  }
+  var dateEl = beatCopy.querySelector(".pyOpen__date");
+  if (dateEl) {
+    var dt = (dateEl.textContent || "").trim();
+    if (dt === "[A CONFIRMAR]" || dt.indexOf("Lançamento") < 0) {
+      dateEl.textContent = "Lançamento [A CONFIRMAR]";
+    }
+  }
 }
 
 var isMobile = Math.min(window.innerWidth || 1440, window.innerHeight || 900) <= 430 ||
@@ -108,8 +120,18 @@ var state = {
 };
 
 function setStatus(msg) {
-  if (statusEl && debugHud) {
-    statusEl.textContent = msg;
+  if (statusEl) {
+    if (debugHud) {
+      statusEl.textContent = msg;
+      statusEl.hidden = false;
+    } else {
+      statusEl.textContent = "";
+      statusEl.hidden = true;
+    }
+  }
+  var hud = document.getElementById("hud");
+  if (hud && !debugHud) {
+    hud.hidden = true;
   }
   window.__POYTARA_THREE_PROVA__ = Object.assign({}, state, { status: msg });
 }
@@ -276,7 +298,7 @@ function createFigmaTexture() {
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.generateMipmaps = false;
-  tex.flipY = false;
+  tex.flipY = true;
 
   function roundRect(x, y, rw, rh, r) {
     ctx.beginPath();
@@ -296,112 +318,157 @@ function createFigmaTexture() {
     ctx.clearRect(0, 0, w, h);
     ctx.setTransform(w / lw, 0, 0, h / lh, 0, 0);
 
-    ctx.fillStyle = "#2c2c2c";
+    /* Thin MacBook glass bezel (near-black) */
+    ctx.fillStyle = "#0a0a0a";
     ctx.fillRect(0, 0, lw, lh);
+    var inset = 10;
+    ctx.fillStyle = "#1c1c1e";
+    ctx.fillRect(inset, inset, lw - inset * 2, lh - inset * 2);
 
-    ctx.fillStyle = "#3c3c3c";
-    ctx.fillRect(0, 0, lw, 36);
+    var ox = inset;
+    var oy = inset;
+    var iw = lw - inset * 2;
+    var ih = lh - inset * 2;
+
+    /* Figma chrome */
+    ctx.fillStyle = "#2c2c2c";
+    ctx.fillRect(ox, oy, iw, 34);
     ctx.fillStyle = "#ff5f57";
     ctx.beginPath();
-    ctx.arc(18, 18, 5, 0, Math.PI * 2);
+    ctx.arc(ox + 18, oy + 17, 5, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#febc2e";
     ctx.beginPath();
-    ctx.arc(34, 18, 5, 0, Math.PI * 2);
+    ctx.arc(ox + 34, oy + 17, 5, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#28c840";
     ctx.beginPath();
-    ctx.arc(50, 18, 5, 0, Math.PI * 2);
+    ctx.arc(ox + 50, oy + 17, 5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#f0f0f0";
-    ctx.font = "500 13px IBM Plex Sans, sans-serif";
-    ctx.fillText("Poytara — Draft", 72, 22);
-    ctx.fillStyle = "rgba(240,240,240,0.45)";
-    ctx.font = "11px IBM Plex Mono, monospace";
-    ctx.fillText("100%", lw - 56, 22);
+    ctx.fillStyle = "#f5f5f5";
+    ctx.font = "600 13px IBM Plex Sans, sans-serif";
+    ctx.fillText("Poytara — Home", ox + 72, oy + 21);
 
-    ctx.fillStyle = "#1e1e1e";
-    ctx.fillRect(0, 36, 48, lh - 36);
+    ctx.fillStyle = "#161616";
+    ctx.fillRect(ox, oy + 34, 44, ih - 34);
     for (var ti = 0; ti < 5; ti++) {
       ctx.fillStyle = ti === 0 ? "#0d99ff" : "#2a2a2a";
-      roundRect(10, 48 + ti * 38, 28, 28, 6);
+      roundRect(ox + 8, oy + 46 + ti * 36, 28, 28, 6);
       ctx.fill();
     }
 
-    ctx.fillStyle = "#252525";
-    ctx.fillRect(48, 36, 168, lh - 36);
-    ctx.fillStyle = "rgba(243,243,243,0.5)";
-    ctx.font = "500 11px IBM Plex Sans, sans-serif";
-    ctx.fillText("LAYERS", 60, 58);
-    var layers = ["Frame 01", "Hero", "Logo", "CTA"];
+    ctx.fillStyle = "#1f1f1f";
+    ctx.fillRect(ox + 44, oy + 34, 150, ih - 34);
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.font = "600 11px IBM Plex Sans, sans-serif";
+    ctx.fillText("LAYERS", ox + 56, oy + 54);
+    var layers = ["Frame Home", "Hero", "Produto", "CTA"];
     for (var li = 0; li < layers.length; li++) {
-      ctx.fillStyle = li === 0 ? "rgba(13,153,255,0.2)" : "#303030";
-      roundRect(58, 70 + li * 36, 140, 28, 4);
+      ctx.fillStyle = li === 0 ? "rgba(13,153,255,0.22)" : "#2b2b2b";
+      roundRect(ox + 52, oy + 64 + li * 34, 134, 26, 4);
       ctx.fill();
-      ctx.fillStyle = li === 0 ? "#9fd6ff" : "rgba(240,240,240,0.8)";
-      ctx.fillText(layers[li], 70, 88 + li * 36);
+      ctx.fillStyle = li === 0 ? "#9fd6ff" : "rgba(240,240,240,0.85)";
+      ctx.font = "500 11px IBM Plex Sans, sans-serif";
+      ctx.fillText(layers[li], ox + 62, oy + 81 + li * 34);
     }
 
-    var cx0 = 216;
-    var cy0 = 36;
-    var cw = lw - cx0;
-    var ch = lh - cy0;
-    ctx.fillStyle = "#1a1a1a";
+    var cx0 = ox + 194;
+    var cy0 = oy + 34;
+    var cw = iw - 194;
+    var ch = ih - 34;
+    ctx.fillStyle = "#111111";
     ctx.fillRect(cx0, cy0, cw, ch);
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(cx0 + 18, cy0 + 18, cw - 36, ch - 36);
+    ctx.rect(cx0 + 14, cy0 + 14, cw - 28, ch - 28);
     ctx.clip();
-    ctx.fillStyle = "#2b2b2b";
-    ctx.fillRect(cx0 + 18, cy0 + 18, cw - 36, ch - 36);
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(cx0 + 14, cy0 + 14, cw - 28, ch - 28);
 
-    var ax = cx0 + cw * 0.12;
-    var ay = cy0 + ch * 0.1;
-    var aw = cw * 0.76;
-    var ah = ch * 0.78;
+    var ax = cx0 + cw * 0.08;
+    var ay = cy0 + ch * 0.08;
+    var aw = cw * 0.84;
+    var ah = ch * 0.84;
+
+    /* Bright white artboard */
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(ax, ay, aw, ah);
 
-    var layerA = clamp01((p - 0.08) / 0.25);
-    var layerB = clamp01((p - 0.2) / 0.25);
-    var layerC = clamp01((p - 0.34) / 0.25);
+    var layerA = clamp01((p - 0.05) / 0.22);
+    var layerB = clamp01((p - 0.18) / 0.28);
+    var layerC = clamp01((p - 0.38) / 0.28);
+    var layerD = clamp01((p - 0.55) / 0.3);
 
+    /* Brand header bar */
     ctx.globalAlpha = layerA;
-    ctx.fillStyle = "#e8eef5";
-    ctx.fillRect(ax + aw * 0.08, ay + ah * 0.1 + (1 - layerA) * 8, aw * 0.36, ah * 0.18);
+    ctx.fillStyle = "#075B2D";
+    ctx.fillRect(ax, ay, aw, ah * 0.12);
+    ctx.fillStyle = "#F4E6C8";
+    ctx.font = "600 16px IBM Plex Sans, sans-serif";
+    ctx.fillText("POYTARA", ax + aw * 0.04, ay + ah * 0.08);
 
+    /* Hero with product blob + copy */
     ctx.globalAlpha = layerB;
-    ctx.fillStyle = "#d9e8f8";
-    ctx.fillRect(ax + aw * 0.08, ay + ah * 0.34 + (1 - layerB) * 8, aw * 0.84, ah * 0.28);
-    ctx.strokeStyle = "#0d99ff";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(ax + aw * 0.08, ay + ah * 0.34 + (1 - layerB) * 8, aw * 0.84, ah * 0.28);
+    var hy = ay + ah * 0.14;
+    var hh = ah * 0.46;
+    ctx.fillStyle = "#E8F5EE";
+    ctx.fillRect(ax + aw * 0.04, hy, aw * 0.92, hh);
+    ctx.fillStyle = "#075B2D";
+    ctx.font = "600 22px IBM Plex Sans, sans-serif";
+    ctx.fillText("Nutrição que", ax + aw * 0.08, hy + hh * 0.32);
+    ctx.fillText("acompanha cada fase", ax + aw * 0.08, hy + hh * 0.48);
+    ctx.fillStyle = "#1a1a1a";
+    ctx.font = "400 12px IBM Plex Sans, sans-serif";
+    ctx.fillText("Ração premium com identidade própria.", ax + aw * 0.08, hy + hh * 0.66);
+    /* Product disc */
+    ctx.fillStyle = "#0A7A3C";
+    ctx.beginPath();
+    ctx.arc(ax + aw * 0.78, hy + hh * 0.5, hh * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#F4E6C8";
+    ctx.beginPath();
+    ctx.arc(ax + aw * 0.78, hy + hh * 0.5, hh * 0.14, 0, Math.PI * 2);
+    ctx.fill();
 
+    /* Cards row */
     ctx.globalAlpha = layerC;
-    ctx.fillStyle = "#0d99ff";
-    ctx.fillRect(
-      ax + aw * 0.64,
-      ay + ah * 0.76 + (1 - layerC) * 8,
-      aw * 0.28,
-      ah * 0.14
-    );
+    var cy = ay + ah * 0.64;
+    for (var ci = 0; ci < 3; ci++) {
+      ctx.fillStyle = ci === 1 ? "#075B2D" : "#F3F6F4";
+      roundRect(ax + aw * (0.04 + ci * 0.31), cy, aw * 0.28, ah * 0.16, 6);
+      ctx.fill();
+      ctx.fillStyle = ci === 1 ? "#F4E6C8" : "#075B2D";
+      ctx.font = "600 11px IBM Plex Sans, sans-serif";
+      ctx.fillText(["Cães", "Gatos", "Onde comprar"][ci], ax + aw * (0.07 + ci * 0.31), cy + ah * 0.1);
+    }
+
+    /* CTA */
+    ctx.globalAlpha = layerD;
+    ctx.fillStyle = "#0D99FF";
+    roundRect(ax + aw * 0.62, ay + ah * 0.84, aw * 0.3, ah * 0.1, 6);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "600 12px IBM Plex Sans, sans-serif";
+    ctx.fillText("Ver catálogo", ax + aw * 0.68, ay + ah * 0.905);
     ctx.globalAlpha = 1;
 
     var curT = clamp01((p - 0.05) / 0.9);
-    var curX = ax + aw * (0.18 + curT * 0.54);
-    var curY = ay + ah * (0.22 + curT * 0.46);
+    var curX = ax + aw * (0.2 + curT * 0.5);
+    var curY = ay + ah * (0.25 + curT * 0.45);
     ctx.save();
     ctx.translate(curX, curY);
     ctx.rotate((-45 * Math.PI) / 180);
     ctx.globalAlpha = curT > 0 ? 1 : 0;
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 2;
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(0, 14);
-    ctx.lineTo(10, 10);
+    ctx.lineTo(0, 16);
+    ctx.lineTo(11, 11);
     ctx.closePath();
+    ctx.fill();
     ctx.stroke();
     ctx.restore();
     ctx.restore();
@@ -449,7 +516,9 @@ function bindScreenTexture(root, figma) {
   var pw = xmax - xmin;
   var ph = zmax - zmin;
   var plane = new THREE.PlaneGeometry(pw, ph, 1, 1);
+  /* Lid panel is XZ: lay flat, then 180° in-plane so chrome/top reads upright (v0.2.1 was inverted). */
   plane.rotateX(-Math.PI / 2);
+  plane.rotateY(Math.PI);
   var mat = new THREE.MeshBasicMaterial({
     map: figma.texture,
     toneMapped: false,
@@ -465,11 +534,18 @@ function bindScreenTexture(root, figma) {
 
   var overlay = new THREE.Mesh(plane, mat);
   overlay.name = "screenOverlay";
-  overlay.position.set((xmin + xmax) / 2, yAvg + 0.0012, (zmin + zmax) / 2);
+  overlay.position.set((xmin + xmax) / 2, yAvg + 0.0015, (zmin + zmax) / 2);
   overlay.renderOrder = 3;
   screenMesh.visible = false;
+  /* Hide thick gray bezel/glass leftovers around the panel */
+  ["Object_4", "Object_5", "Object_6", "Object_8"].forEach(function (name) {
+    var o = root.getObjectByName(name);
+    if (o) {
+      o.visible = false;
+    }
+  });
   (screenMesh.parent || root).add(overlay);
-  state.stripeFix = "clean-plane-hide-glass";
+  state.stripeFix = "uv-roty-pi-flipY1-thin-bezel";
   return overlay;
 }
 
@@ -1034,11 +1110,10 @@ async function init() {
   }
 
   /*
-    Final frame (ref ~1024×498):
-    - Frontal to display; notebook on the RIGHT; left half black negative space.
-    - Desktop: display left edge @ ~50% width; right side cropped off-frame.
-      Display height ~8%→80% of viewport (~72% tall).
-    - Mobile: center notebook, crop both sides; keep Figma readable.
+    Final frame (ref ~1024×498), pulled back vs v0.2.1:
+    - Frontal; notebook RIGHT; left half black for copy.
+    - Desktop: moldura top ~8%, screen base ~80%, trackpad ~88–90%, floor glow below.
+    - Mobile: smaller/higher notebook so title never overlaps keyboard.
   */
   function computeFaceCamera() {
     applyLidPose(bevels, poses, "open");
@@ -1061,7 +1136,6 @@ async function init() {
     var screenRight = new THREE.Vector3(1, 0, 0);
     screenRight.transformDirection(screenOverlay.matrixWorld).normalize();
     var screenUp = new THREE.Vector3().crossVectors(normal, screenRight).normalize();
-    /* Re-orthogonalize right in case */
     screenRight.crossVectors(screenUp, normal).normalize();
 
     var geo = screenOverlay.geometry;
@@ -1073,38 +1147,28 @@ async function init() {
     var screenWorldH = Math.abs(localH * Math.max(worldScale.y, worldScale.z));
 
     var vFov = THREE.MathUtils.degToRad(camera.fov);
-    /* Display spans ~8%→80% of viewport height */
-    var fillH = isMobile ? 0.58 : 0.72;
+    /* Pull back: screen ~55% of viewport so chassis + trackpad breathe */
+    var fillH = isMobile ? 0.42 : 0.55;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    /*
-      Vertical: screen mid should sit at ~44% from top (ndc y ≈ +0.12),
-      slightly above optical center, with base/keyboard below.
-    */
-    var ndcY = isMobile ? 0.06 : 0.12;
+    /* Screen mid a bit above center → top chrome ~8%, base/trackpad in lower third */
+    var ndcY = isMobile ? 0.18 : 0.16;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
-      /* Centered crop both sides — Figma stays readable */
-      camFaceTarget.copy(center).addScaledVector(screenUp, -vertShift * 0.35);
+      camFaceTarget.copy(center).addScaledVector(screenUp, -vertShift * 0.2);
       camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
-      camFace.addScaledVector(screenUp, faceDist * 0.02);
+      camFace.addScaledVector(screenUp, faceDist * 0.04);
     } else {
-      /*
-        Look near the LEFT edge of the display so that edge sits at ~50% width
-        (ndc x≈0) and the right of the notebook is cropped by the frame.
-      */
       var leftEdge = new THREE.Vector3()
         .copy(center)
         .addScaledVector(screenRight, -screenWorldW * 0.5);
-      /* Aim slightly inset so chrome/bezel breathes at the center line */
       camFaceTarget
         .copy(leftEdge)
-        .addScaledVector(screenRight, screenWorldW * 0.06)
+        .addScaledVector(screenRight, screenWorldW * 0.08)
         .addScaledVector(screenUp, -vertShift);
       camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
-      /* Height slightly above keyboard plane */
-      camFace.addScaledVector(screenUp, faceDist * 0.028);
+      camFace.addScaledVector(screenUp, faceDist * 0.035);
     }
   }
 
@@ -1271,19 +1335,21 @@ async function init() {
     if (!beatCopy) {
       return;
     }
-    /* Desktop: left black negative space. Mobile: below / soft overlay edge. */
+    /* Desktop: left black. Mobile: below notebook, no overlap with keyboard. */
     if (isMobile) {
       beatCopy.style.top = "auto";
-      beatCopy.style.bottom = "5%";
-      beatCopy.style.left = "5%";
-      beatCopy.style.right = "5%";
-      beatCopy.style.maxWidth = "90%";
+      beatCopy.style.bottom = "3%";
+      beatCopy.style.left = "6%";
+      beatCopy.style.right = "6%";
+      beatCopy.style.maxWidth = "88%";
+      beatCopy.style.textAlign = "left";
     } else {
-      beatCopy.style.top = "22%";
+      beatCopy.style.top = "20%";
       beatCopy.style.bottom = "auto";
       beatCopy.style.left = "4%";
       beatCopy.style.right = "auto";
       beatCopy.style.maxWidth = "min(28vw, 22rem)";
+      beatCopy.style.textAlign = "left";
     }
     beatCopy.style.zIndex = "5";
   }
@@ -1605,7 +1671,7 @@ async function init() {
   });
   window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · studio v0.2.1 cinema · stripeFix=" +
+    "ready · studio v0.2.2 · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
       (state.dofOk ? " · dof" : " · no-dof") +
