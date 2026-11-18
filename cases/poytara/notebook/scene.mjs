@@ -11,12 +11,12 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
 import { RGBELoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/RGBELoader.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.3.4 — final deck light + crop; close locked; mobile tight.
+  Poytara abertura estúdio v0.3.5 — MOBILE fit only; desktop/close/flash locked at v0.3.4.
   CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta.
 */
 
-var BUILD = "notebook-studio-v034-20261118141255";
-var CDN_TAG = "v0.3.4";
+var BUILD = "notebook-studio-v035-20261118155240";
+var CDN_TAG = "v0.3.5";
 
 var reduced =
   window.matchMedia &&
@@ -124,7 +124,7 @@ var state = {
   captureMode: captureMode,
   captureTime: 0,
   lockCamera: null,
-  finalCamLocked: false, /* v0.3.4 reframes */
+  finalCamLocked: false, /* desktop freezes after 1st face; mobile has _frozenMobileFace */
   loadProgress: 0,
   wireframe: true,
   studio: "dark-dramatic",
@@ -1278,7 +1278,8 @@ async function init() {
   var studio = makeStudioFloor();
   scene.add(studio.group);
 
-  var particleCount = reduced ? 0 : isMobile ? 48 : state.gpuOffLikely ? 72 : 120;
+  /* Mobile: fewer motes so keyboard stays clean (desktop count locked) */
+  var particleCount = reduced ? 0 : isMobile ? 14 : state.gpuOffLikely ? 72 : 120;
   var dust = particleCount > 0 ? makeParticles(particleCount) : null;
   if (dust) {
     scene.add(dust);
@@ -1566,18 +1567,48 @@ async function init() {
       with a tiny pull so front/trackpad lands ~88–90%.
       Mobile: keep upper/mid + copy below.
     */
-    /* Desktop: +8–12% closer than v033; left edge ~50%; trackpad ~92–95% */
-    var fillH = isMobile ? 0.46 : 0.515;
+    /* Desktop LOCKED v0.3.4: fillH 0.515 / ndcY 0.30 / faceDist×0.92 / right crop */
+    var fillH = isMobile ? 0.30 : 0.515;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? -0.18 : 0.30;
+    var ndcY = isMobile ? -0.02 : 0.30;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
-      /* Larger notebook; tight vertical gaps to header + info */
-      camFaceTarget.copy(center).addScaledVector(screenUp, vertShift * 0.85);
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 0.9);
-      camFace.addScaledVector(screenUp, faceDist * 0.02);
+      /*
+        v0.3.5: whole chassis between header (~50px) and info (~725px).
+        Side margins 12–20px; zero text overlap. Camera slightly higher
+        to foreshorten lid height so width+height fit the safe band.
+        Desktop path untouched below.
+      */
+      var chassisBox = new THREE.Box3().setFromObject(macbook);
+      var cSize = new THREE.Vector3();
+      var cCenter = new THREE.Vector3();
+      chassisBox.getSize(cSize);
+      chassisBox.getCenter(cCenter);
+      var aspect = Math.max(0.2, camera.aspect || (390 / 844));
+      var hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
+      /*
+        Proven v0.3.5 mobile fit (whole chassis, sides clear, no text overlap).
+        Width-led; slight extra pullback so bezel/sidebar never kiss the edge.
+        Desktop path untouched below.
+      */
+      var fillW = 0.88;
+      var distW = (cSize.x * 0.5) / (Math.tan(hFov / 2) * fillW);
+      var distH = (cSize.y * 0.5) / (Math.tan(vFov / 2) * 0.74);
+      faceDist = Math.max(distW, distH) * 1.06;
+      camFaceTarget.copy(cCenter).addScaledVector(screenUp, cSize.y * 0.07);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
+      camFace.addScaledVector(screenUp, faceDist * 0.025);
+      if (!state._frozenMobileFace) {
+        state._frozenMobileFace = camFace.clone();
+        state._frozenMobileFaceTarget = camFaceTarget.clone();
+        state._frozenMobileFaceDist = faceDist;
+      } else {
+        camFace.copy(state._frozenMobileFace);
+        camFaceTarget.copy(state._frozenMobileFaceTarget);
+        faceDist = state._frozenMobileFaceDist;
+      }
     } else {
       var leftEdge = new THREE.Vector3()
         .copy(center)
