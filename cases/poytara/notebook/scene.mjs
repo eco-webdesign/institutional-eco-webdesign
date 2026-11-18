@@ -11,12 +11,12 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
 import { RGBELoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/RGBELoader.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.3.5 — MOBILE fit only; desktop/close/flash locked at v0.3.4.
+  Poytara abertura estúdio v0.4.0 — caverna mitológica + pedestal (DESKTOP).
   CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta.
 */
 
-var BUILD = "notebook-studio-v035-20261118155810";
-var CDN_TAG = "v0.3.5";
+var BUILD = "notebook-studio-v040-20261118173622";
+var CDN_TAG = "v0.4.0";
 
 var reduced =
   window.matchMedia &&
@@ -69,7 +69,9 @@ function isMobileEarly() {
 
 var glbUrl = cdnBase + (isMobileEarly() ? "laptop-generic-mobile.glb" : "laptop-generic.glb");
 var posesUrl = cdnBase + "lid-poses.json";
-var hdriUrl = cdnBase + "studio-small-08-1k.hdr";
+var hdriUrl = cdnBase + "cave-wall-1k.hdr";
+var pedestalTexBase = cdnBase + "textures/pedestal/";
+var caveTexBase = cdnBase + "textures/cave/";
 
 document.body.setAttribute("data-mode", mode);
 document.body.classList.toggle("is-debug", debugHud);
@@ -127,7 +129,7 @@ var state = {
   finalCamLocked: false, /* desktop freezes after 1st face; mobile has _frozenMobileFace */
   loadProgress: 0,
   wireframe: true,
-  studio: "dark-dramatic",
+  studio: "cave-pedestal-v040",
   build: BUILD,
 };
 
@@ -571,105 +573,247 @@ function bindScreenTexture(root, figma) {
   return overlay;
 }
 
-function makeStudioFloor() {
-  /* Deep black void: no gray horizon. Only a soft radial reflection under the notebook. */
-  var group = new THREE.Group();
-  group.name = "studioFloor";
+function loadPbrMaps(base, names) {
+  var loader = new THREE.TextureLoader();
+  var out = {};
+  names.forEach(function (n) {
+    var t = loader.load(base + n + ".jpg");
+    t.colorSpace = n === "albedo" ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = 4;
+    out[n] = t;
+  });
+  return out;
+}
 
-  var ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 40),
+function carveStoneNoise(geo, amp) {
+  var pos = geo.attributes.position;
+  var i;
+  var v = new THREE.Vector3();
+  for (i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    var n =
+      Math.sin(v.x * 7.3 + v.z * 5.1) * 0.35 +
+      Math.sin(v.x * 13.7 - v.z * 9.2) * 0.22 +
+      Math.sin((v.x + v.z) * 21.0) * 0.12;
+    /* Chip edges: stronger near outer radius */
+    var r = Math.hypot(v.x, v.z);
+    var edge = THREE.MathUtils.smoothstep(0.72, 1.05, r / Math.max(0.001, geo.parameters ? geo.parameters.radiusTop || geo.parameters.radius || 1 : 1));
+    v.y += n * amp * (0.35 + edge);
+    v.x += n * amp * 0.15 * edge;
+    v.z += n * amp * 0.12 * edge;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makePedestal(maps) {
+  var group = new THREE.Group();
+  group.name = "stonePedestal";
+  var mat = new THREE.MeshPhysicalMaterial({
+    color: 0xd8cfc0,
+    map: maps.albedo || null,
+    normalMap: maps.normal || null,
+    roughnessMap: maps.roughness || null,
+    aoMap: maps.ao || null,
+    roughness: 0.92,
+    metalness: 0.02,
+    clearcoat: 0.04,
+    clearcoatRoughness: 0.85,
+    envMapIntensity: 0.35,
+  });
+  if (mat.map) mat.map.repeat.set(1.6, 1.6);
+  if (mat.normalMap) mat.normalMap.repeat.set(1.6, 1.6);
+  if (mat.roughnessMap) mat.roughnessMap.repeat.set(1.6, 1.6);
+  if (mat.aoMap) mat.aoMap.repeat.set(1.6, 1.6);
+
+  /* Plinth stack — worn temple pedestal */
+  var baseGeo = carveStoneNoise(new THREE.CylinderGeometry(1.55, 1.72, 0.28, 48, 4), 0.045);
+  var midGeo = carveStoneNoise(new THREE.CylinderGeometry(1.28, 1.48, 0.55, 48, 6), 0.055);
+  var topGeo = carveStoneNoise(new THREE.CylinderGeometry(1.42, 1.22, 0.22, 48, 3), 0.035);
+  var capGeo = carveStoneNoise(new THREE.CylinderGeometry(1.18, 1.35, 0.12, 40, 2), 0.02);
+
+  var base = new THREE.Mesh(baseGeo, mat);
+  base.position.y = 0.14;
+  base.castShadow = true;
+  base.receiveShadow = true;
+  var mid = new THREE.Mesh(midGeo, mat.clone());
+  mid.position.y = 0.55;
+  mid.castShadow = true;
+  mid.receiveShadow = true;
+  var top = new THREE.Mesh(topGeo, mat.clone());
+  top.position.y = 0.95;
+  top.castShadow = true;
+  top.receiveShadow = true;
+  var cap = new THREE.Mesh(capGeo, mat.clone());
+  cap.position.y = 1.12;
+  cap.castShadow = true;
+  cap.receiveShadow = true;
+  /* Subtle moss tint on lower ring */
+  if (base.material && base.material.color) base.material.color.set(0xc9c2ae);
+
+  group.add(base, mid, top, cap);
+  group.userData.topY = 1.18;
+  group.userData.radius = 1.35;
+  return group;
+}
+
+function makeCaveShell(maps) {
+  var group = new THREE.Group();
+  group.name = "caveShell";
+  var caveMat = new THREE.MeshStandardMaterial({
+    color: 0xcbb89a,
+    map: maps.albedo || null,
+    normalMap: maps.normal || null,
+    roughnessMap: maps.roughness || null,
+    roughness: 0.95,
+    metalness: 0,
+    side: THREE.BackSide,
+    envMapIntensity: 0.2,
+  });
+  if (caveMat.map) caveMat.map.repeat.set(3, 2);
+  if (caveMat.normalMap) caveMat.normalMap.repeat.set(3, 2);
+  if (caveMat.roughnessMap) caveMat.roughnessMap.repeat.set(3, 2);
+
+  var dome = new THREE.Mesh(new THREE.SphereGeometry(28, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.72), caveMat);
+  dome.position.y = 4;
+  dome.name = "caveDome";
+  group.add(dome);
+
+  /* Opening / oculus — bright disc above */
+  var oculus = new THREE.Mesh(
+    new THREE.CircleGeometry(4.2, 48),
     new THREE.MeshBasicMaterial({
-      color: 0x000000,
+      color: 0xffe2b0,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+      depthWrite: false,
+    })
+  );
+  oculus.rotation.x = Math.PI / 2;
+  oculus.position.set(-2.5, 22, -4);
+  oculus.name = "caveOculus";
+  group.add(oculus);
+
+  /* Soft god-ray shafts (additive quads) */
+  var rayMat = new THREE.MeshBasicMaterial({
+    color: 0xffd9a0,
+    transparent: true,
+    opacity: 0.07,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  var ri;
+  for (ri = 0; ri < 5; ri++) {
+    var ray = new THREE.Mesh(new THREE.PlaneGeometry(1.4 + ri * 0.35, 18 + ri * 1.2), rayMat.clone());
+    ray.material.opacity = 0.045 + ri * 0.008;
+    ray.position.set(-1.2 + ri * 0.55, 12, -1.5 + ri * 0.4);
+    ray.rotation.z = -0.18 + ri * 0.05;
+    ray.rotation.y = 0.35;
+    ray.name = "godRay" + ri;
+    group.add(ray);
+  }
+
+  /* Left shadow veil — keeps copy legible over bright cave */
+  var veil = new THREE.Mesh(
+    new THREE.PlaneGeometry(14, 18),
+    new THREE.MeshBasicMaterial({
+      color: 0x1a1410,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
       toneMapped: false,
     })
   );
+  veil.position.set(-7.5, 4, 2);
+  veil.rotation.y = 0.35;
+  veil.name = "leftCopyVeil";
+  group.add(veil);
+
+  return group;
+}
+
+function makeStudioFloor() {
+  /*
+    v0.4.0 cave + pedestal. No black void floor reflection.
+    Pedestal/cave textures loaded sync via TextureLoader (JPG).
+  */
+  var group = new THREE.Group();
+  group.name = "cavePedestalWorld";
+
+  var pedMaps = loadPbrMaps(pedestalTexBase, ["albedo", "normal", "roughness", "ao"]);
+  var caveMaps = loadPbrMaps(caveTexBase, ["albedo", "normal", "roughness"]);
+  var pedestal = makePedestal(pedMaps);
+  pedestal.position.set(1.15, 0, -0.35);
+  pedestal.scale.setScalar(1.05);
+  group.add(pedestal);
+
+  var cave = makeCaveShell(caveMaps);
+  group.add(cave);
+
+  /* Warm stone ground under pedestal (no mirror reflection) */
+  var ground = new THREE.Mesh(
+    new THREE.CircleGeometry(9, 64),
+    new THREE.MeshStandardMaterial({
+      color: 0xb5a68c,
+      map: pedMaps.albedo || null,
+      roughness: 0.96,
+      metalness: 0,
+    })
+  );
+  if (ground.material.map) ground.material.map.repeat.set(4, 4);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.014;
+  ground.position.y = 0.001;
   ground.receiveShadow = true;
+  ground.name = "caveGround";
   group.add(ground);
 
-  var gc = document.createElement("canvas");
-  gc.width = 256;
-  gc.height = 256;
-  var gctx = gc.getContext("2d");
-  var grd = gctx.createRadialGradient(128, 128, 2, 128, 128, 128);
-  grd.addColorStop(0, "rgba(170,180,195,0.28)");
-  grd.addColorStop(0.25, "rgba(90,100,115,0.12)");
-  grd.addColorStop(0.55, "rgba(30,35,45,0.04)");
-  grd.addColorStop(1, "rgba(0,0,0,0)");
-  gctx.fillStyle = grd;
-  gctx.fillRect(0, 0, 256, 256);
-  var glowTex = new THREE.CanvasTexture(gc);
-  glowTex.needsUpdate = true;
-
-  var glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.2, 4.2),
-    new THREE.MeshBasicMaterial({
-      map: glowTex,
-      transparent: true,
-      opacity: 0.16,
-      blending: THREE.NormalBlending,
-      depthWrite: false,
-      toneMapped: false,
-    })
-  );
-  glow.rotation.x = -Math.PI / 2;
-  glow.position.y = 0.001;
-  glow.name = "floorGlow";
-  group.add(glow);
-
-  /* Contact: invisible as a shape — diffuse only, no hard disk/ellipse */
+  /* Contact shadow under notebook — soft disk on pedestal top */
   var contact = new THREE.Mesh(
-    new THREE.CircleGeometry(2.4, 64),
-    new THREE.ShadowMaterial({ opacity: 0.08 })
+    new THREE.CircleGeometry(1.05, 48),
+    new THREE.MeshBasicMaterial({
+      color: 0x1a120c,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+    })
   );
   contact.rotation.x = -Math.PI / 2;
-  contact.position.y = 0.0025;
-  contact.receiveShadow = true;
-  contact.visible = false;
+  contact.position.set(1.15, pedestal.userData.topY * 1.05 + 0.002, -0.35);
+  contact.name = "pedestalContact";
   group.add(contact);
 
-  /* Dissolve-only grid; never in final */
+  /* Dissolve wire placeholder (load only) */
   var floorWire = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.PlaneGeometry(5, 5, 6, 6)),
+    new THREE.EdgesGeometry(new THREE.CylinderGeometry(1.4, 1.55, 1.1, 12)),
     new THREE.LineBasicMaterial({
-      color: 0x8899bb,
+      color: 0xc4b59a,
       transparent: true,
-      opacity: 0.12,
+      opacity: 0.2,
       depthWrite: false,
     })
   );
-  floorWire.rotation.x = -Math.PI / 2;
-  floorWire.position.y = 0.004;
+  floorWire.position.copy(pedestal.position);
+  floorWire.position.y = 0.55;
   floorWire.name = "floorWire";
   group.add(floorWire);
-
-  /* Front-edge strip under chassis lip (visible when notebook kisses bottom crop) */
-  var softRefl = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.4, 1.55),
-    new THREE.MeshBasicMaterial({
-      map: glowTex,
-      color: 0xb0bcc8,
-      transparent: true,
-      opacity: 0.15,
-      depthWrite: false,
-      blending: THREE.NormalBlending,
-      toneMapped: false,
-    })
-  );
-  softRefl.rotation.x = -Math.PI / 2;
-  softRefl.position.set(0.15, 0.0006, 1.35);
-  softRefl.name = "floorSoftReflection";
-  softRefl.receiveShadow = false;
-  group.add(softRefl);
 
   return {
     group: group,
     floorWire: floorWire,
     ground: ground,
     contact: contact,
-    glow: glow,
-    softRefl: softRefl,
+    glow: null,
+    softRefl: null,
+    pedestal: pedestal,
+    cave: cave,
+    pedestalTopY: pedestal.userData.topY * 1.05,
   };
 }
 
@@ -694,20 +838,20 @@ function makeParticles(count) {
   var pos = new Float32Array(count * 3);
   var i;
   for (i = 0; i < count; i++) {
-    /* Beam only — over keyboard / screen light cone, no scattered field */
-    pos[i * 3] = (Math.random() - 0.18) * 1.2;
-    pos[i * 3 + 1] = Math.random() * 0.95 + 0.22;
-    pos[i * 3 + 2] = (Math.random() - 0.08) * 1.05 + 0.4;
+    /* Warm dust in god-ray cone above pedestal / notebook */
+    pos[i * 3] = 1.15 + (Math.random() - 0.35) * 1.4;
+    pos[i * 3 + 1] = Math.random() * 4.8 + 1.2;
+    pos[i * 3 + 2] = -0.35 + (Math.random() - 0.4) * 1.3;
   }
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   var mat = new THREE.PointsMaterial({
-    size: 0.028,
+    size: 0.032,
     map: makeDustTexture(),
     transparent: true,
-    opacity: 0.22,
+    opacity: 0.28,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    color: 0xe8f0ff,
+    color: 0xffe2b0,
     sizeAttenuation: true,
     toneMapped: false,
   });
@@ -1190,11 +1334,11 @@ async function init() {
   renderer.toneMappingExposure = isMobile ? 1.58 : 1.18;
   renderer.shadowMap.enabled = !state.gpuOffLikely;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.setClearColor(0x000000, 1);
+  renderer.setClearColor(0x2a2218, 1);
 
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.022);
+  scene.background = new THREE.Color(0x3a3126);
+  scene.fog = new THREE.FogExp2(0x4a3f32, 0.018);
 
   /* ~50–85mm feel */
   var camera = new THREE.PerspectiveCamera(26, 1, 0.05, 200);
@@ -1208,11 +1352,12 @@ async function init() {
     pmrem = null;
   }
 
-  var hemi = new THREE.HemisphereLight(0x5a6578, 0x000000, 0.12);
+  var hemi = new THREE.HemisphereLight(0xffe6c4, 0x3a2e22, 0.42);
   scene.add(hemi);
 
-  var key = new THREE.DirectionalLight(0xe8e4dc, 0.12);
-  key.position.set(5.2, 8.5, 2.2);
+  /* Warm key from cave oculus */
+  var key = new THREE.DirectionalLight(0xffd9a8, 1.35);
+  key.position.set(-2.2, 14.5, -3.5);
   key.castShadow = !state.gpuOffLikely;
   if (key.castShadow) {
     key.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
@@ -1228,23 +1373,28 @@ async function init() {
   }
   scene.add(key);
 
-  /* Thin cold rim — mid 0.2.4↔0.2.5: readable silhouette, no silver wash */
-  var rim = new THREE.DirectionalLight(0xd8e6ff, isMobile ? 4.1 : 3.4);
+  /* Warm rim — Space Black readable against sand/ochre cave */
+  var rim = new THREE.DirectionalLight(0xffe8c8, isMobile ? 2.4 : 2.0);
   rim.position.set(-6.2, 4.6, -6.2);
   scene.add(rim);
 
-  var rimHinge = new THREE.DirectionalLight(0xc8d6ea, isMobile ? 2.8 : 2.3);
+  var rimHinge = new THREE.DirectionalLight(0xf0dcc0, isMobile ? 1.6 : 1.35);
   rimHinge.position.set(4.2, 1.4, -5.2);
   scene.add(rimHinge);
 
-  var rimLid = new THREE.DirectionalLight(0xe8f2ff, isMobile ? 2.6 : 2.15);
+  var rimLid = new THREE.DirectionalLight(0xfff0d8, isMobile ? 1.7 : 1.45);
   rimLid.position.set(0.5, 5.5, -3.8);
   scene.add(rimLid);
 
   /* Thin rim on base front lip + side — keeps chassis readable in final (same as close) */
-  var rimFront = new THREE.DirectionalLight(0xd4e0f2, isMobile ? 2.2 : 1.85);
+  var rimFront = new THREE.DirectionalLight(0xe8d8c0, isMobile ? 1.4 : 1.15);
   rimFront.position.set(2.4, 0.55, 7.2);
   scene.add(rimFront);
+
+  /* Soft fill from left (copy side stays darker) */
+  var caveFill = new THREE.DirectionalLight(0x8a7a68, 0.35);
+  caveFill.position.set(-8, 3.5, 4);
+  scene.add(caveFill);
 
   /* Soft grazing key on deck — FINAL only (close stays v0.3.3) */
   var deckKey = new THREE.DirectionalLight(0xf4f0e8, 0);
@@ -1333,24 +1483,24 @@ async function init() {
     });
   }
 
-  /* Studio HDRI — reflections only; background stays pure black */
+  /* Cave HDRI — reflections; warm fog/background painted by applyFinalStudioLook */
   if (pmrem) {
     try {
       var hdrTex = await new RGBELoader(manager).loadAsync(hdriUrl);
       hdrTex.mapping = THREE.EquirectangularReflectionMapping;
       var envRT = pmrem.fromEquirectangular(hdrTex);
       scene.environment = envRT.texture;
-      scene.environmentIntensity = isMobile ? 0.2 : 0.16;
-      scene.background = new THREE.Color(0x000000);
+      scene.environmentIntensity = isMobile ? 0.38 : 0.45;
+      scene.background = new THREE.Color(0x3a3126);
       hdrTex.dispose();
       pmrem.dispose();
-      state.envSource = "polyhaven-studio-small-08";
+      state.envSource = "polyhaven-cave-wall";
     } catch (err) {
       console.warn("hdri-load", err);
       try {
         var envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
         scene.environment = envTex;
-        scene.environmentIntensity = 0.32;
+        scene.environmentIntensity = 0.4;
         pmrem.dispose();
         state.envSource = "room-fallback";
       } catch (err2) {
@@ -1433,6 +1583,22 @@ async function init() {
   macbook.position.sub(center);
   macbook.position.y += size.y * 0.42;
 
+  /* Seat notebook on carved pedestal (v0.4.0).
+     root.scale = MODEL_SCALE → convert world deltas to local macbook.position. */
+  var pedX = 1.15;
+  var pedZ = -0.35;
+  var pedTop = studio.pedestalTopY || 1.18;
+  macbook.position.x += pedX / MODEL_SCALE;
+  macbook.position.z += pedZ / MODEL_SCALE;
+  box.setFromObject(macbook);
+  macbook.position.y += (pedTop - box.min.y + 0.012) / MODEL_SCALE;
+  if (studio.contact) {
+    studio.contact.position.set(pedX, pedTop + 0.004, pedZ);
+  }
+  if (studio.pedestal) {
+    studio.pedestal.position.set(pedX, 0, pedZ);
+  }
+
   applyLidPose(bevels, poses, "open");
   box.setFromObject(macbook);
   size = box.getSize(new THREE.Vector3());
@@ -1466,13 +1632,6 @@ async function init() {
       deckSpot.position.set(palm.x + 0.15, palm.y + 1.15, palm.z + 1.05);
       deckSpot.target.updateMatrixWorld();
     }
-    if (studio.softRefl) {
-      studio.softRefl.position.set(
-        palm.x * 0.4,
-        0.0006,
-        aimBox.max.z + 0.35
-      );
-    }
   })();
 
   var controls = null;
@@ -1481,7 +1640,7 @@ async function init() {
     controls.enableDamping = true;
     controls.dampingFactor = 0.06;
     controls.enablePan = false;
-    controls.target.set(0, targetY, 0);
+    controls.target.set(pedX, targetY, pedZ);
     controls.minDistance = Math.max(size.x * 0.55, 2.2);
     controls.maxDistance = Math.max(size.x * 4.5, 24);
     controls.minPolarAngle = THREE.MathUtils.degToRad(22);
@@ -1491,7 +1650,7 @@ async function init() {
     controls.update();
   }
 
-  var camTarget = new THREE.Vector3(0, targetY, 0);
+  var camTarget = new THREE.Vector3(pedX, targetY, pedZ);
   var camFar = new THREE.Vector3();
   var camNear = new THREE.Vector3();
   var camFace = new THREE.Vector3();
@@ -1643,29 +1802,22 @@ async function init() {
 
   function applyFinalStudioLook(amount) {
     var a = clamp01(amount);
-    /* Always deep black — never a gray horizon band */
-    scene.background = new THREE.Color(0x000000);
-    renderer.setClearColor(0x000000, 1);
-    scene.fog = new THREE.FogExp2(0x000000, 0.022 + 0.012 * a);
+    /* Warm cave atmosphere — sand/ochre fog, no black void */
+    scene.background = new THREE.Color(0x3a3126);
+    renderer.setClearColor(0x2a2218, 1);
+    scene.fog = new THREE.FogExp2(0x4a3f32, 0.014 + 0.008 * a);
+    renderer.toneMappingExposure = isMobile ? 1.45 : 1.22 + 0.06 * a;
     if (studio.group) {
       if (studio.floorWire) studio.floorWire.visible = false;
-      if (studio.ground) {
-        studio.ground.visible = true;
-        if (studio.ground.material && studio.ground.material.color) {
-          studio.ground.material.color.set(0x000000);
+      if (studio.ground) studio.ground.visible = true;
+      if (studio.contact) {
+        studio.contact.visible = true;
+        if (studio.contact.material) {
+          studio.contact.material.opacity = 0.38 + 0.08 * a;
         }
       }
-      if (studio.glow && studio.glow.material) {
-        studio.glow.visible = true;
-        studio.glow.material.opacity = 0.1 + 0.06 * a;
-      }
-      if (studio.contact) {
-        studio.contact.visible = false;
-      }
-      if (studio.softRefl && studio.softRefl.material) {
-        studio.softRefl.visible = true;
-        studio.softRefl.material.opacity = 0.15 + 0.02 * a;
-      }
+      if (studio.cave) studio.cave.visible = true;
+      if (studio.pedestal) studio.pedestal.visible = true;
     }
     if (screenOverlay && screenOverlay.material) {
       screenOverlay.material.opacity = Math.max(screenOverlay.material.opacity, 0.001);
@@ -2518,6 +2670,50 @@ async function init() {
     return { ms: ms, box: state._flashBox, cam: dumpCamera() };
   };
 
+  window.__POYTARA_CAPTURE_CLOSE_PEDESTAL = function () {
+    /* Desktop QA close: carved pedestal + Space Black notebook (not keyboard-only). */
+    state.captureTime = 8200;
+    applyTimeline(8200);
+    applyFinalStudioLook(1);
+    applyLidPose(bevels, poses, "open");
+    state.lidPose = "open";
+    root.updateMatrixWorld(true);
+    if (studio.group) studio.group.updateMatrixWorld(true);
+    var boxNb = new THREE.Box3().setFromObject(macbook);
+    var nbCenter = boxNb.getCenter(new THREE.Vector3());
+    var nbSize = boxNb.getSize(new THREE.Vector3());
+    /* Fixed look: palmrest / hinge on stone — ignore cave AABB */
+    var look = new THREE.Vector3(
+      nbCenter.x + nbSize.x * 0.05,
+      boxNb.min.y + nbSize.y * 0.22,
+      nbCenter.z + nbSize.z * 0.08
+    );
+    var eye = new THREE.Vector3(
+      look.x + Math.max(nbSize.x, 1.2) * 1.35,
+      look.y + Math.max(nbSize.y, 0.8) * 1.05,
+      look.z + Math.max(nbSize.z, 1.0) * 1.55
+    );
+    camera.position.copy(eye);
+    camera.lookAt(look);
+    state.lockCamera = { pos: eye.clone(), target: look.clone() };
+    if (beatCopy) beatCopy.style.opacity = "0";
+    /* Hide left copy veil for product close */
+    if (studio.cave) {
+      studio.cave.traverse(function (o) {
+        if (o.name === "leftCopyVeil") o.visible = false;
+      });
+    }
+    renderFrame();
+    dumpCamera();
+    return {
+      look: look.toArray(),
+      eye: eye.toArray(),
+      nbSize: nbSize.toArray(),
+      nbMin: boxNb.min.toArray(),
+      nbMax: boxNb.max.toArray(),
+    };
+  };
+
 
   if (forceBeat !== null && forceBeat !== undefined && forceBeat !== "") {
     jumpToBeat(parseInt(forceBeat, 10) || 0);
@@ -2535,7 +2731,7 @@ async function init() {
     build: BUILD,
     mode: "three",
     glb: glbUrl,
-    studio: "dark-dramatic",
+    studio: "cave-pedestal-v040",
     tag: CDN_TAG,
   });
   window.__ecoCaseBuild = BUILD;
