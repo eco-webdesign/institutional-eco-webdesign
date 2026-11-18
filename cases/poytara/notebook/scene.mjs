@@ -14,7 +14,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v026-20261118000951";
+var BUILD = "notebook-studio-v026-20261118001640";
 var CDN_TAG = "v0.2.6";
 
 var reduced =
@@ -1576,6 +1576,9 @@ async function init() {
   var T_COPY0 = T_FACE1 + 120;
   var T_COPY1 = T_COPY0 + TIMING.copy;
   var T_DONE = T_COPY1 + 80;
+  /* Harness: absolute ms of flash plateau mid (~40ms into peak) */
+  state.flashPeakMs = Math.round(T_LID0 + TIMING.lid * 0.32 + 40);
+  state.flashT0Ms = Math.round(T_LID0 + TIMING.lid * 0.32);
 
   function placeCopyOutsideScreen() {
     if (!beatCopy) {
@@ -1629,9 +1632,10 @@ async function init() {
       /* Idle: light edge bloom on bright UI. Flash: local, capped (~35–40% of frame). */
       var baseBloom = isMobile || state.gpuOffLikely ? 0.14 : 0.17;
       if (bloomFlash > 0.08) {
-        bloomPass.strength = Math.min(1.15, baseBloom + bloomFlash * 0.95);
-        bloomPass.radius = 0.2;
-        bloomPass.threshold = 0.48;
+        /* High threshold: only screen white blooms — aluminum bounce must not steal the peak */
+        bloomPass.strength = Math.min(1.05, baseBloom + bloomFlash * 0.88);
+        bloomPass.radius = 0.18;
+        bloomPass.threshold = 0.62;
       } else {
         bloomPass.strength = baseBloom;
         bloomPass.radius = 0.3;
@@ -1813,13 +1817,13 @@ async function init() {
         else if (fAge < 360) bloomFlash = 1 - (fAge - 80) / 280;
         else bloomFlash = 0;
       }
-      /* Screen flash plane + short halo on bezel/keys — same Space Gray base */
+      /* Screen flash plane dominates the peak (MeshBasic white → bloom from panel) */
       if (screenFlashPlane && screenFlashPlane.material) {
         screenFlashPlane.material.color.set(0xffffff);
-        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(1, bloomFlash * 1.2) : 0;
+        screenFlashPlane.material.opacity = bloomFlash > 0.02 ? Math.min(1, bloomFlash * 1.35) : 0;
         screenFlashPlane.visible = bloomFlash > 0.02;
-        /* Inset so bloom stays on the panel (~35–40% of frame) */
-        screenFlashPlane.scale.set(0.82, 0.82, 0.82);
+        /* Slightly inset so halo stays on panel + short bezel (~35–40% of frame) */
+        screenFlashPlane.scale.set(0.88, 0.88, 0.88);
       }
       if (screenOverlay) {
         var sp = new THREE.Vector3();
@@ -1827,22 +1831,23 @@ async function init() {
         var sn = new THREE.Vector3(0, 1, 0);
         sn.transformDirection(screenOverlay.matrixWorld).normalize();
         if (sn.dot(camera.position.clone().sub(sp)) < 0) sn.negate();
-        /* Aim bounce at upper keyboard / chin — not the front lip */
-        screenBounce.position.copy(sp).addScaledVector(sn, 0.06);
-        screenBounce.target.position.copy(sp).addScaledVector(sn, -0.35);
-        screenBounce.target.position.y = Math.max(0.14, screenBounce.target.position.y);
+        /* Aim bounce at chin / upper keys only — never the front lip / trackpad */
+        screenBounce.position.copy(sp).addScaledVector(sn, 0.04);
+        screenBounce.target.position.copy(sp).addScaledVector(sn, -0.22);
+        screenBounce.target.position.y = Math.max(0.22, Math.min(0.55, screenBounce.target.position.y));
         screenBounce.target.updateMatrixWorld();
         if (bloomFlash > 0.45) {
-          /* Peak: screen plane dominates; tiny chin halo only */
-          screenBounce.intensity = 0.7 * bloomFlash;
-          screenBounce.distance = 1.5;
-          screenBounce.angle = Math.PI / 22;
-          screenBounce.decay = 2.6;
+          /* Peak: kill SpotLight so aluminum does not out-bloom the screen */
+          screenBounce.intensity = 0;
+          screenBounce.distance = 1.2;
+          screenBounce.angle = Math.PI / 28;
+          screenBounce.decay = 2.8;
         } else if (bloomFlash > 0.08) {
-          screenBounce.intensity = 1.4 * bloomFlash;
-          screenBounce.distance = 1.8;
-          screenBounce.angle = Math.PI / 18;
-          screenBounce.decay = 2.4;
+          /* Fade-out: soft chin wash only */
+          screenBounce.intensity = 0.55 * bloomFlash;
+          screenBounce.distance = 1.6;
+          screenBounce.angle = Math.PI / 22;
+          screenBounce.decay = 2.5;
         } else {
           screenBounce.intensity = (isMobile ? 2.4 : 2.1) * timeline.figmaP;
           screenBounce.distance = 3.2;
@@ -2045,11 +2050,18 @@ async function init() {
       timeline.done = false;
       timeline.flashed = false;
       timeline.flashT0 = undefined;
+      timeline.figmaP = 0;
       timeline.faceComputed = false;
       timeline.copyShown = false;
       timeline.copySettled = false;
       timeline.lastBeat = -1;
       bloomFlash = 0;
+      if (screenFlashPlane) {
+        screenFlashPlane.visible = false;
+        screenFlashPlane.material.opacity = 0;
+      }
+      if (screenOverlay) screenOverlay.material.opacity = 0;
+      screenBounce.intensity = 0;
       if (beatCopy) {
         beatCopy.style.opacity = "0";
       }
