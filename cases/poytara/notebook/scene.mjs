@@ -8,14 +8,14 @@ import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.2.0 — beats 0–3 (automáticos no load).
-  Estúdio neutro escuro, wireframe→sólido no LoadingManager, DoF (BokehPass),
-  dolly de câmera, tampa com overshoot, env map (RoomEnvironment/PMREM), ACES.
+  Poytara abertura estúdio v0.2.1 — beats 0–3 + face/zoom final (automáticos).
+  Estúdio neutro escuro, wireframe→sólido, DoF (BokehPass), dolly, tampa,
+  depois câmera frontal à tela + zoom grande; info por último. ACES / PMREM.
   CSP a=dr: sem blob:, sem workers, sem Draco. Créditos: ATTRIBUTION.md
 */
 
-var BUILD = "notebook-studio-v020-20261117212115";
-var CDN_TAG = "v0.2.0";
+var BUILD = "notebook-studio-v021-20261117214908";
+var CDN_TAG = "v0.2.1";
 
 var reduced =
   window.matchMedia &&
@@ -78,8 +78,8 @@ var isMobile = Math.min(window.innerWidth || 1440, window.innerHeight || 900) <=
   (window.innerWidth || 1440) <= 430;
 
 var TIMING = reduced
-  ? { beat0: 120, loadHold: 80, dissolve: 180, enter: 420, lid: 360, figma: 280, copy: 220 }
-  : { beat0: 420, loadHold: 200, dissolve: 900, enter: 2100, lid: 1400, figma: 1500, copy: 700 };
+  ? { beat0: 120, loadHold: 80, dissolve: 180, enter: 420, lid: 360, figma: 280, face: 420, copy: 220 }
+  : { beat0: 420, loadHold: 200, dissolve: 900, enter: 2100, lid: 1400, figma: 1500, face: 2100, copy: 700 };
 
 var state = {
   webglOk: false,
@@ -260,8 +260,9 @@ function stripPhones(root) {
 }
 
 function createFigmaTexture() {
-  var w = 1024;
-  var h = 640;
+  /* Higher res so face-zoom (~85–90% viewport) stays sharp */
+  var w = 2048;
+  var h = 1280;
   var paint = document.createElement("canvas");
   paint.width = w;
   paint.height = h;
@@ -287,13 +288,17 @@ function createFigmaTexture() {
 
   function paintFrame(progress) {
     var p = clamp01(progress);
+    var lw = 1024;
+    var lh = 640;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
+    ctx.setTransform(w / lw, 0, 0, h / lh, 0, 0);
 
     ctx.fillStyle = "#2c2c2c";
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, lw, lh);
 
     ctx.fillStyle = "#3c3c3c";
-    ctx.fillRect(0, 0, w, 36);
+    ctx.fillRect(0, 0, lw, 36);
     ctx.fillStyle = "#ff5f57";
     ctx.beginPath();
     ctx.arc(18, 18, 5, 0, Math.PI * 2);
@@ -311,10 +316,10 @@ function createFigmaTexture() {
     ctx.fillText("Poytara — Draft", 72, 22);
     ctx.fillStyle = "rgba(240,240,240,0.45)";
     ctx.font = "11px IBM Plex Mono, monospace";
-    ctx.fillText("100%", w - 56, 22);
+    ctx.fillText("100%", lw - 56, 22);
 
     ctx.fillStyle = "#1e1e1e";
-    ctx.fillRect(0, 36, 48, h - 36);
+    ctx.fillRect(0, 36, 48, lh - 36);
     for (var ti = 0; ti < 5; ti++) {
       ctx.fillStyle = ti === 0 ? "#0d99ff" : "#2a2a2a";
       roundRect(10, 48 + ti * 38, 28, 28, 6);
@@ -322,7 +327,7 @@ function createFigmaTexture() {
     }
 
     ctx.fillStyle = "#252525";
-    ctx.fillRect(48, 36, 168, h - 36);
+    ctx.fillRect(48, 36, 168, lh - 36);
     ctx.fillStyle = "rgba(243,243,243,0.5)";
     ctx.font = "500 11px IBM Plex Sans, sans-serif";
     ctx.fillText("LAYERS", 60, 58);
@@ -337,8 +342,8 @@ function createFigmaTexture() {
 
     var cx0 = 216;
     var cy0 = 36;
-    var cw = w - cx0;
-    var ch = h - cy0;
+    var cw = lw - cx0;
+    var ch = lh - cy0;
     ctx.fillStyle = "#1a1a1a";
     ctx.fillRect(cx0, cy0, cw, ch);
 
@@ -399,6 +404,7 @@ function createFigmaTexture() {
     ctx.restore();
     ctx.restore();
 
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     tex.needsUpdate = true;
   }
 
@@ -882,6 +888,9 @@ async function init() {
   var camTarget = new THREE.Vector3(0, targetY, 0);
   var camFar = new THREE.Vector3();
   var camNear = new THREE.Vector3();
+  var camFace = new THREE.Vector3();
+  var camFaceTarget = new THREE.Vector3();
+  var faceDist = 1;
 
   function frameCamera(distScale) {
     var r = 0.5 * Math.hypot(size.x, size.y * 1.28, size.z);
@@ -896,10 +905,51 @@ async function init() {
     return dist;
   }
 
+  function computeFaceCamera() {
+    applyLidPose(bevels, poses, "open");
+    root.updateMatrixWorld(true);
+    if (!screenOverlay) {
+      camFace.copy(camNear);
+      camFaceTarget.copy(camTarget);
+      faceDist = nearDist;
+      return;
+    }
+    screenOverlay.updateWorldMatrix(true, true);
+    var center = new THREE.Vector3();
+    screenOverlay.getWorldPosition(center);
+    var normal = new THREE.Vector3(0, 1, 0);
+    normal.transformDirection(screenOverlay.matrixWorld).normalize();
+    var towardNear = new THREE.Vector3().subVectors(camNear, center);
+    if (normal.dot(towardNear) < 0) {
+      normal.negate();
+    }
+    var geo = screenOverlay.geometry;
+    var localW = (geo && geo.parameters && geo.parameters.width) || size.x * 0.9;
+    var localH = (geo && geo.parameters && geo.parameters.height) || size.z * 0.7;
+    var worldScale = new THREE.Vector3();
+    screenOverlay.getWorldScale(worldScale);
+    var screenWorldW = Math.abs(localW * worldScale.x);
+    var screenWorldH = Math.abs(localH * Math.max(worldScale.y, worldScale.z));
+    var aspect = Math.max(camera.aspect, 0.35);
+    var vFov = THREE.MathUtils.degToRad(camera.fov);
+    var hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
+    /* Desktop: ~85–90% width. Mobile: fill width, no crop of screen content. */
+    var fillW = isMobile ? 0.985 : 0.875;
+    var fillH = isMobile ? 0.9 : 0.72;
+    var distW = screenWorldW / (fillW * 2 * Math.tan(hFov / 2));
+    var distH = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
+    faceDist = Math.max(distW, distH);
+    camFaceTarget.copy(center);
+    camFace.copy(center).addScaledVector(normal, faceDist);
+  }
+
   var nearDist = frameCamera(1);
   camNear.copy(camera.position);
   frameCamera(1.78);
   camFar.copy(camera.position);
+  computeFaceCamera();
+  applyLidPose(bevels, poses, "closed");
+  state.lidPose = "closed";
   camera.position.copy(camFar);
 
   var composer = null;
@@ -925,6 +975,13 @@ async function init() {
     }
     if (bokehPass && bokehPass.uniforms && bokehPass.uniforms.aspect) {
       bokehPass.uniforms.aspect.value = camera.aspect;
+    }
+    var lidWas = state.lidPose;
+    computeFaceCamera();
+    if (lidWas !== "open") {
+      applyLidPose(bevels, poses, lidWas === "opening" ? "closed" : lidWas || "closed");
+    } else {
+      applyLidPose(bevels, poses, "open");
     }
   }
 
@@ -966,6 +1023,7 @@ async function init() {
     figmaP: 0,
     assetsReadyAt: 0,
     copyShown: false,
+    faceComputed: false,
   };
 
   var T_BEAT0 = TIMING.beat0;
@@ -977,9 +1035,24 @@ async function init() {
   var T_LID1 = T_LID0 + TIMING.lid;
   var T_FIG0 = T_LID0 + TIMING.lid * 0.72;
   var T_FIG1 = T_FIG0 + TIMING.figma;
-  var T_COPY0 = Math.max(T_LID1, T_FIG1) + 80;
+  var T_FACE0 = Math.max(T_LID1, T_FIG1 * 0.85);
+  var T_FACE1 = T_FACE0 + TIMING.face;
+  var T_COPY0 = T_FACE1 + 120;
   var T_COPY1 = T_COPY0 + TIMING.copy;
-  var T_DONE = T_COPY1 + 120;
+  var T_DONE = T_COPY1 + 80;
+
+  function placeCopyOutsideScreen() {
+    if (!beatCopy) {
+      return;
+    }
+    /* Keep info in letterbox / margin so it does not cover the Figma screen */
+    beatCopy.style.top = "auto";
+    beatCopy.style.bottom = isMobile ? "4%" : "5%";
+    beatCopy.style.left = isMobile ? "4%" : "3%";
+    beatCopy.style.right = "auto";
+    beatCopy.style.maxWidth = isMobile ? "88%" : "16rem";
+    beatCopy.style.zIndex = "5";
+  }
 
   function setDof(progressSharp) {
     if (!bokehPass || !bokehPass.uniforms) {
@@ -1012,18 +1085,10 @@ async function init() {
     placeholder.visible = false;
     setWireframeMix(matEntries, 0);
     if (studio.floorWire) studio.floorWire.visible = false;
-    if (n >= 1) {
-      camera.position.copy(camNear);
-      camera.lookAt(camTarget);
-      setDof(1);
-    } else {
-      camera.position.copy(camFar);
-      camera.lookAt(camTarget);
-      setDof(0);
-    }
     if (n >= 2) {
       applyLidPose(bevels, poses, "open");
       state.lidPose = "open";
+      computeFaceCamera();
       document.body.classList.add("is-figma-live");
       figma.paintFrame(1);
       if (screenOverlay) screenOverlay.material.opacity = 1;
@@ -1033,6 +1098,20 @@ async function init() {
       figma.paintFrame(0);
       if (screenOverlay) screenOverlay.material.opacity = 0;
       timeline.figmaP = 0;
+    }
+    if (n >= 3) {
+      camera.position.copy(camFace);
+      camera.lookAt(camFaceTarget);
+      setDof(1);
+      placeCopyOutsideScreen();
+    } else if (n >= 1) {
+      camera.position.copy(camNear);
+      camera.lookAt(camTarget);
+      setDof(1);
+    } else {
+      camera.position.copy(camFar);
+      camera.lookAt(camTarget);
+      setDof(0);
     }
     if (n >= 3 && beatCopy) {
       beatCopy.style.opacity = "1";
@@ -1068,7 +1147,7 @@ async function init() {
     var t = Math.max(0, elapsed - timeline.assetsReadyAt);
 
     var beat = 0;
-    if (t >= T_DONE) beat = 3;
+    if (t >= T_FACE0) beat = 3;
     else if (t >= T_FIG0) beat = 2;
     else if (t >= T_ENTER0) beat = 1;
     if (beat !== timeline.lastBeat) {
@@ -1092,26 +1171,12 @@ async function init() {
       studio.floorWire.visible = dissolveT < 0.98;
     }
 
-    /* Camera dolly (never scale model) + focus pull */
-    if (t < T_ENTER1) {
-      var te = clamp01((t - T_ENTER0) / TIMING.enter);
-      var teE = easeInOutExpo(te);
-      camera.position.lerpVectors(camFar, camNear, teE);
-      camera.lookAt(camTarget);
-      setDof(teE);
-    } else {
-      camera.position.copy(camNear);
-      camera.lookAt(camTarget);
-      setDof(1);
-    }
-
     /* Lid with weight + overshoot/settle */
     if (t < T_LID0) {
       applyLidPose(bevels, poses, "closed");
       state.lidPose = "closed";
     } else if (t < T_LID1) {
       var tl = clamp01((t - T_LID0) / TIMING.lid);
-      /* easeOutBack overshoots ligeiramente acima de 1, depois assenta em 1 */
       var lidE = easeOutBack(tl);
       lerpLid(bevels, closedPose, openPose, lidE);
       state.lidPose = "opening";
@@ -1120,7 +1185,7 @@ async function init() {
       state.lidPose = "open";
     }
 
-    /* Figma only after lid mostly open */
+    /* Figma after lid mostly open (before / during face zoom) */
     if (t >= T_FIG0) {
       document.body.classList.add("is-figma-live");
       var tf = clamp01((t - T_FIG0) / TIMING.figma);
@@ -1135,8 +1200,47 @@ async function init() {
       if (screenOverlay) screenOverlay.material.opacity = 0;
     }
 
-    /* External info last */
+    /* Camera: enter dolly → hold → face+zoom frontal (never scale model) */
+    if (t < T_ENTER1) {
+      var te = clamp01((t - T_ENTER0) / TIMING.enter);
+      var teE = easeInOutExpo(te);
+      camera.position.lerpVectors(camFar, camNear, teE);
+      camera.lookAt(camTarget);
+      setDof(teE);
+    } else if (t < T_FACE0) {
+      camera.position.copy(camNear);
+      camera.lookAt(camTarget);
+      setDof(1);
+    } else if (t < T_FACE1) {
+      if (!timeline.faceComputed) {
+        computeFaceCamera();
+        timeline.faceComputed = true;
+        placeCopyOutsideScreen();
+      }
+      var tfz = clamp01((t - T_FACE0) / TIMING.face);
+      var tfzE = easeInOutExpo(tfz);
+      camera.position.lerpVectors(camNear, camFace, tfzE);
+      var look = new THREE.Vector3().lerpVectors(camTarget, camFaceTarget, tfzE);
+      camera.lookAt(look);
+      setDof(1);
+      if (bokehPass && bokehPass.uniforms) {
+        bokehPass.uniforms.focus.value = faceDist * 0.98;
+        bokehPass.uniforms.maxblur.value = THREE.MathUtils.lerp(0.0012, 0.0004, tfzE);
+      }
+    } else {
+      camera.position.copy(camFace);
+      camera.lookAt(camFaceTarget);
+      setDof(1);
+      if (bokehPass && bokehPass.uniforms) {
+        bokehPass.uniforms.focus.value = faceDist * 0.98;
+        bokehPass.uniforms.maxblur.value = 0.0004;
+        bokehPass.enabled = false;
+      }
+    }
+
+    /* External info last — after face zoom settles, outside screen */
     if (t >= T_COPY0 && beatCopy) {
+      placeCopyOutsideScreen();
       var tc = clamp01((t - T_COPY0) / TIMING.copy);
       beatCopy.style.opacity = String(easeOutExpo(tc));
       scrambleText(titleEl, titleFinal, tc);
@@ -1150,6 +1254,9 @@ async function init() {
       figma.paintFrame(1);
       timeline.figmaP = 1;
       if (screenOverlay) screenOverlay.material.opacity = 1;
+      camera.position.copy(camFace);
+      camera.lookAt(camFaceTarget);
+      placeCopyOutsideScreen();
       if (beatCopy) {
         beatCopy.style.opacity = "1";
         if (titleEl) titleEl.textContent = titleFinal;
@@ -1167,18 +1274,13 @@ async function init() {
     }
   }
 
-  function idleDrift(now) {
-    if (reduced || mode === "orbit" || !timeline.done) {
+  function idleDrift(_now) {
+    /* v0.2.1: after face zoom, hold static (no drift) */
+    if (!timeline.done) {
       return;
     }
-    var s = Math.sin(now * 0.00045) * 0.035;
-    var c = Math.cos(now * 0.00032) * 0.022;
-    camera.position.set(
-      camNear.x + s,
-      camNear.y + c * 0.6,
-      camNear.z + c
-    );
-    camera.lookAt(camTarget);
+    camera.position.copy(camFace);
+    camera.lookAt(camFaceTarget);
   }
 
   function frame(now) {
@@ -1221,7 +1323,7 @@ async function init() {
   });
   window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · studio v0.2.0 · stripeFix=" +
+    "ready · studio v0.2.1 face-zoom · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
       (state.dofOk ? " · dof" : " · no-dof")
