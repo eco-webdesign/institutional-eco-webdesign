@@ -14,7 +14,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco. HUD só ?debug=1.
 */
 
-var BUILD = "notebook-studio-v025-20261117235425";
+var BUILD = "notebook-studio-v025-20261117235605";
 var CDN_TAG = "v0.2.5";
 
 var reduced =
@@ -808,7 +808,7 @@ function upgradeChassisMaterials(root, figmaTex) {
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
       });
-      if (m.map) {
+      if (phys.map) {
         phys.map.colorSpace = THREE.SRGBColorSpace;
       }
       return phys;
