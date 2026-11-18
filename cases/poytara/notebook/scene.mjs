@@ -8,13 +8,12 @@ import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.2.1 — beats 0–3 + face/zoom final (automáticos).
-  Estúdio neutro escuro, wireframe→sólido, DoF (BokehPass), dolly, tampa,
-  depois câmera frontal à tela + zoom grande; info por último. ACES / PMREM.
-  CSP a=dr: sem blob:, sem workers, sem Draco. Créditos: ATTRIBUTION.md
+  Poytara abertura estúdio v0.2.1 — beats 0–3 + face final (automáticos).
+  Após tampa: dolly/giro para frame frontal (notebook à direita, crop na borda;
+  metade esquerda preta). Info por último. ACES / PMREM. CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v021-20261117214908";
+var BUILD = "notebook-studio-v021-20261117215339";
 var CDN_TAG = "v0.2.1";
 
 var reduced =
@@ -260,7 +259,7 @@ function stripPhones(root) {
 }
 
 function createFigmaTexture() {
-  /* Higher res so face-zoom (~85–90% viewport) stays sharp */
+  /* Higher res so the final frontal crop stays sharp */
   var w = 2048;
   var h = 1280;
   var paint = document.createElement("canvas");
@@ -905,6 +904,13 @@ async function init() {
     return dist;
   }
 
+  /*
+    Final frame (ref ~1024×498):
+    - Frontal to display; notebook on the RIGHT; left half black negative space.
+    - Desktop: display left edge @ ~50% width; right side cropped off-frame.
+      Display height ~8%→80% of viewport (~72% tall).
+    - Mobile: center notebook, crop both sides; keep Figma readable.
+  */
   function computeFaceCamera() {
     applyLidPose(bevels, poses, "open");
     root.updateMatrixWorld(true);
@@ -923,6 +929,12 @@ async function init() {
     if (normal.dot(towardNear) < 0) {
       normal.negate();
     }
+    var screenRight = new THREE.Vector3(1, 0, 0);
+    screenRight.transformDirection(screenOverlay.matrixWorld).normalize();
+    var screenUp = new THREE.Vector3().crossVectors(normal, screenRight).normalize();
+    /* Re-orthogonalize right in case */
+    screenRight.crossVectors(screenUp, normal).normalize();
+
     var geo = screenOverlay.geometry;
     var localW = (geo && geo.parameters && geo.parameters.width) || size.x * 0.9;
     var localH = (geo && geo.parameters && geo.parameters.height) || size.z * 0.7;
@@ -930,17 +942,72 @@ async function init() {
     screenOverlay.getWorldScale(worldScale);
     var screenWorldW = Math.abs(localW * worldScale.x);
     var screenWorldH = Math.abs(localH * Math.max(worldScale.y, worldScale.z));
-    var aspect = Math.max(camera.aspect, 0.35);
+
     var vFov = THREE.MathUtils.degToRad(camera.fov);
-    var hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
-    /* Desktop: ~85–90% width. Mobile: fill width, no crop of screen content. */
-    var fillW = isMobile ? 0.985 : 0.875;
-    var fillH = isMobile ? 0.9 : 0.72;
-    var distW = screenWorldW / (fillW * 2 * Math.tan(hFov / 2));
-    var distH = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
-    faceDist = Math.max(distW, distH);
-    camFaceTarget.copy(center);
-    camFace.copy(center).addScaledVector(normal, faceDist);
+    /* Display spans ~8%→80% of viewport height */
+    var fillH = isMobile ? 0.58 : 0.72;
+    faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
+
+    /*
+      Vertical: screen mid should sit at ~44% from top (ndc y ≈ +0.12),
+      slightly above optical center, with base/keyboard below.
+    */
+    var ndcY = isMobile ? 0.06 : 0.12;
+    var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
+
+    if (isMobile) {
+      /* Centered crop both sides — Figma stays readable */
+      camFaceTarget.copy(center).addScaledVector(screenUp, -vertShift * 0.35);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
+      camFace.addScaledVector(screenUp, faceDist * 0.02);
+    } else {
+      /*
+        Look near the LEFT edge of the display so that edge sits at ~50% width
+        (ndc x≈0) and the right of the notebook is cropped by the frame.
+      */
+      var leftEdge = new THREE.Vector3()
+        .copy(center)
+        .addScaledVector(screenRight, -screenWorldW * 0.5);
+      /* Aim slightly inset so chrome/bezel breathes at the center line */
+      camFaceTarget
+        .copy(leftEdge)
+        .addScaledVector(screenRight, screenWorldW * 0.06)
+        .addScaledVector(screenUp, -vertShift);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
+      /* Height slightly above keyboard plane */
+      camFace.addScaledVector(screenUp, faceDist * 0.028);
+    }
+  }
+
+  function applyFinalStudioLook(amount) {
+    var a = clamp01(amount);
+    renderer.setClearColor(new THREE.Color().setRGB(0.027 * (1 - a), 0.035 * (1 - a), 0.055 * (1 - a)), 1);
+    scene.background = new THREE.Color().setRGB(0.027 * (1 - a), 0.035 * (1 - a), 0.055 * (1 - a));
+    if (a > 0.5) {
+      scene.background = new THREE.Color(0x000000);
+      renderer.setClearColor(0x000000, 1);
+      scene.fog = new THREE.FogExp2(0x000000, 0.045 + 0.02 * a);
+    }
+    if (studio.group) {
+      studio.group.traverse(function (o) {
+        if (o.name === "floorWire") {
+          o.visible = a < 0.35;
+        }
+        if (o.isMesh && o.material && o.material.color && o !== studio.contact) {
+          /* Fade cyclorama / ground toward pure black */
+          if (!o.userData._baseColor) {
+            o.userData._baseColor = o.material.color.clone();
+          }
+          o.material.color.copy(o.userData._baseColor).lerp(new THREE.Color(0x000000), a * 0.92);
+        }
+        if (o === studio.contact && o.material) {
+          o.material.opacity = 0.42 + 0.2 * a;
+        }
+      });
+    }
+    if (screenOverlay && screenOverlay.material) {
+      screenOverlay.material.opacity = Math.max(screenOverlay.material.opacity, 0.001);
+    }
   }
 
   var nearDist = frameCamera(1);
@@ -1045,12 +1112,20 @@ async function init() {
     if (!beatCopy) {
       return;
     }
-    /* Keep info in letterbox / margin so it does not cover the Figma screen */
-    beatCopy.style.top = "auto";
-    beatCopy.style.bottom = isMobile ? "4%" : "5%";
-    beatCopy.style.left = isMobile ? "4%" : "3%";
-    beatCopy.style.right = "auto";
-    beatCopy.style.maxWidth = isMobile ? "88%" : "16rem";
+    /* Desktop: left black negative space. Mobile: below / soft overlay edge. */
+    if (isMobile) {
+      beatCopy.style.top = "auto";
+      beatCopy.style.bottom = "5%";
+      beatCopy.style.left = "5%";
+      beatCopy.style.right = "5%";
+      beatCopy.style.maxWidth = "90%";
+    } else {
+      beatCopy.style.top = "22%";
+      beatCopy.style.bottom = "auto";
+      beatCopy.style.left = "4%";
+      beatCopy.style.right = "auto";
+      beatCopy.style.maxWidth = "min(28vw, 22rem)";
+    }
     beatCopy.style.zIndex = "5";
   }
 
@@ -1102,6 +1177,7 @@ async function init() {
     if (n >= 3) {
       camera.position.copy(camFace);
       camera.lookAt(camFaceTarget);
+      applyFinalStudioLook(1);
       setDof(1);
       placeCopyOutsideScreen();
     } else if (n >= 1) {
@@ -1222,18 +1298,20 @@ async function init() {
       camera.position.lerpVectors(camNear, camFace, tfzE);
       var look = new THREE.Vector3().lerpVectors(camTarget, camFaceTarget, tfzE);
       camera.lookAt(look);
+      applyFinalStudioLook(tfzE);
       setDof(1);
       if (bokehPass && bokehPass.uniforms) {
         bokehPass.uniforms.focus.value = faceDist * 0.98;
-        bokehPass.uniforms.maxblur.value = THREE.MathUtils.lerp(0.0012, 0.0004, tfzE);
+        bokehPass.uniforms.maxblur.value = THREE.MathUtils.lerp(0.0012, 0.00035, tfzE);
       }
     } else {
       camera.position.copy(camFace);
       camera.lookAt(camFaceTarget);
+      applyFinalStudioLook(1);
       setDof(1);
       if (bokehPass && bokehPass.uniforms) {
         bokehPass.uniforms.focus.value = faceDist * 0.98;
-        bokehPass.uniforms.maxblur.value = 0.0004;
+        bokehPass.uniforms.maxblur.value = 0.00035;
         bokehPass.enabled = false;
       }
     }
@@ -1256,6 +1334,7 @@ async function init() {
       if (screenOverlay) screenOverlay.material.opacity = 1;
       camera.position.copy(camFace);
       camera.lookAt(camFaceTarget);
+      applyFinalStudioLook(1);
       placeCopyOutsideScreen();
       if (beatCopy) {
         beatCopy.style.opacity = "1";
@@ -1275,12 +1354,13 @@ async function init() {
   }
 
   function idleDrift(_now) {
-    /* v0.2.1: after face zoom, hold static (no drift) */
+    /* v0.2.1: final frame holds static (no drift) */
     if (!timeline.done) {
       return;
     }
     camera.position.copy(camFace);
     camera.lookAt(camFaceTarget);
+    applyFinalStudioLook(1);
   }
 
   function frame(now) {
@@ -1323,7 +1403,7 @@ async function init() {
   });
   window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · studio v0.2.1 face-zoom · stripeFix=" +
+    "ready · studio v0.2.1 face-right · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
       (state.dofOk ? " · dof" : " · no-dof")
