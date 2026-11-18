@@ -1,0 +1,33 @@
+{
+  "position": [
+    -2.65,
+    3.55,
+    7.15
+  ],
+  "target": [
+    0.85,
+    1.62,
+    -0.55
+  ],
+  "fov": 26,
+  "near": 0.05,
+  "far": 200,
+  "aspect": 1.6,
+  "modelScale": 10,
+  "up": [
+    0,
+    1,
+    0
+  ],
+  "blenderPosition": [
+    -2.65,
+    -7.15,
+    3.55
+  ],
+  "blenderTarget": [
+    0.85,
+    0.55,
+    1.62
+  ],
+  "note": "v0.4.1 hybrid pin \u2014 full notebook on pedestal + cave walls"
+}

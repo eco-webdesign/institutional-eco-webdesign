@@ -11,12 +11,21 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
 import { RGBELoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/RGBELoader.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.4.0 — caverna mitológica + pedestal (DESKTOP).
-  CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta.
+  Poytara abertura estúdio v0.4.1 — híbrido: plate Cycles (caverna+pedestal) + notebook Three v0.3.4.
+  CSP: sem blob/workers/Draco/KTX2. HUD só ?debug=1. Timeline TIMING intacta. Desktop only.
 */
 
-var BUILD = "notebook-studio-v040-20261118173622";
-var CDN_TAG = "v0.4.0";
+
+/* v0.4.1 hybrid: pin final cam so full Space Black chassis+lid sit on pedestal
+   with same FOV/pose as Cycles plate (final-camera.json). Not screen-only crop. */
+var PINNED_FINAL_CAM = {
+  position: [-2.65, 3.55, 7.15],
+  target: [0.85, 1.62, -0.55],
+  fov: 26
+};
+
+var BUILD = "notebook-studio-v041-20261118190320";
+var CDN_TAG = "v0.4.1";
 
 var reduced =
   window.matchMedia &&
@@ -69,9 +78,9 @@ function isMobileEarly() {
 
 var glbUrl = cdnBase + (isMobileEarly() ? "laptop-generic-mobile.glb" : "laptop-generic.glb");
 var posesUrl = cdnBase + "lid-poses.json";
-var hdriUrl = cdnBase + "cave-wall-1k.hdr";
-var pedestalTexBase = cdnBase + "textures/pedestal/";
-var caveTexBase = cdnBase + "textures/cave/";
+var hdriUrl = cdnBase + "studio-small-08-1k.hdr";
+var plateUrl = cdnBase + "plates/plate-cave-pedestal-1440.webp";
+var plateUrlJpg = cdnBase + "plates/plate-cave-pedestal-1440.jpg";
 
 document.body.setAttribute("data-mode", mode);
 document.body.classList.toggle("is-debug", debugHud);
@@ -126,10 +135,10 @@ var state = {
   captureMode: captureMode,
   captureTime: 0,
   lockCamera: null,
-  finalCamLocked: false, /* desktop freezes after 1st face; mobile has _frozenMobileFace */
+  finalCamLocked: false, /* v0.3.4 reframes */
   loadProgress: 0,
   wireframe: true,
-  studio: "cave-pedestal-v040",
+  studio: "hybrid-plate-v041",
   build: BUILD,
 };
 
@@ -573,234 +582,39 @@ function bindScreenTexture(root, figma) {
   return overlay;
 }
 
-function loadPbrMaps(base, names) {
-  var loader = new THREE.TextureLoader();
-  var out = {};
-  names.forEach(function (n) {
-    var t = loader.load(base + n + ".jpg");
-    t.colorSpace = n === "albedo" ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 4;
-    out[n] = t;
-  });
-  return out;
-}
-
-function carveStoneNoise(geo, amp) {
-  var pos = geo.attributes.position;
-  var i;
-  var v = new THREE.Vector3();
-  for (i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    var n =
-      Math.sin(v.x * 7.3 + v.z * 5.1) * 0.35 +
-      Math.sin(v.x * 13.7 - v.z * 9.2) * 0.22 +
-      Math.sin((v.x + v.z) * 21.0) * 0.12;
-    /* Chip edges: stronger near outer radius */
-    var r = Math.hypot(v.x, v.z);
-    var edge = THREE.MathUtils.smoothstep(0.72, 1.05, r / Math.max(0.001, geo.parameters ? geo.parameters.radiusTop || geo.parameters.radius || 1 : 1));
-    v.y += n * amp * (0.35 + edge);
-    v.x += n * amp * 0.15 * edge;
-    v.z += n * amp * 0.12 * edge;
-    pos.setXYZ(i, v.x, v.y, v.z);
-  }
-  pos.needsUpdate = true;
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function makePedestal(maps) {
-  var group = new THREE.Group();
-  group.name = "stonePedestal";
-  var mat = new THREE.MeshPhysicalMaterial({
-    color: 0xd8cfc0,
-    map: maps.albedo || null,
-    normalMap: maps.normal || null,
-    roughnessMap: maps.roughness || null,
-    aoMap: maps.ao || null,
-    roughness: 0.92,
-    metalness: 0.02,
-    clearcoat: 0.04,
-    clearcoatRoughness: 0.85,
-    envMapIntensity: 0.35,
-  });
-  if (mat.map) mat.map.repeat.set(1.6, 1.6);
-  if (mat.normalMap) mat.normalMap.repeat.set(1.6, 1.6);
-  if (mat.roughnessMap) mat.roughnessMap.repeat.set(1.6, 1.6);
-  if (mat.aoMap) mat.aoMap.repeat.set(1.6, 1.6);
-
-  /* Plinth stack — worn temple pedestal */
-  var baseGeo = carveStoneNoise(new THREE.CylinderGeometry(1.55, 1.72, 0.28, 48, 4), 0.045);
-  var midGeo = carveStoneNoise(new THREE.CylinderGeometry(1.28, 1.48, 0.55, 48, 6), 0.055);
-  var topGeo = carveStoneNoise(new THREE.CylinderGeometry(1.42, 1.22, 0.22, 48, 3), 0.035);
-  var capGeo = carveStoneNoise(new THREE.CylinderGeometry(1.18, 1.35, 0.12, 40, 2), 0.02);
-
-  var base = new THREE.Mesh(baseGeo, mat);
-  base.position.y = 0.14;
-  base.castShadow = true;
-  base.receiveShadow = true;
-  var mid = new THREE.Mesh(midGeo, mat.clone());
-  mid.position.y = 0.55;
-  mid.castShadow = true;
-  mid.receiveShadow = true;
-  var top = new THREE.Mesh(topGeo, mat.clone());
-  top.position.y = 0.95;
-  top.castShadow = true;
-  top.receiveShadow = true;
-  var cap = new THREE.Mesh(capGeo, mat.clone());
-  cap.position.y = 1.12;
-  cap.castShadow = true;
-  cap.receiveShadow = true;
-  /* Subtle moss tint on lower ring */
-  if (base.material && base.material.color) base.material.color.set(0xc9c2ae);
-
-  group.add(base, mid, top, cap);
-  group.userData.topY = 1.18;
-  group.userData.radius = 1.35;
-  return group;
-}
-
-function makeCaveShell(maps) {
-  var group = new THREE.Group();
-  group.name = "caveShell";
-  var caveMat = new THREE.MeshStandardMaterial({
-    color: 0xcbb89a,
-    map: maps.albedo || null,
-    normalMap: maps.normal || null,
-    roughnessMap: maps.roughness || null,
-    roughness: 0.95,
-    metalness: 0,
-    side: THREE.BackSide,
-    envMapIntensity: 0.2,
-  });
-  if (caveMat.map) caveMat.map.repeat.set(3, 2);
-  if (caveMat.normalMap) caveMat.normalMap.repeat.set(3, 2);
-  if (caveMat.roughnessMap) caveMat.roughnessMap.repeat.set(3, 2);
-
-  var dome = new THREE.Mesh(new THREE.SphereGeometry(28, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.72), caveMat);
-  dome.position.y = 4;
-  dome.name = "caveDome";
-  group.add(dome);
-
-  /* Opening / oculus — bright disc above */
-  var oculus = new THREE.Mesh(
-    new THREE.CircleGeometry(4.2, 48),
-    new THREE.MeshBasicMaterial({
-      color: 0xffe2b0,
-      transparent: true,
-      opacity: 0.85,
-      side: THREE.DoubleSide,
-      toneMapped: false,
-      depthWrite: false,
-    })
-  );
-  oculus.rotation.x = Math.PI / 2;
-  oculus.position.set(-2.5, 22, -4);
-  oculus.name = "caveOculus";
-  group.add(oculus);
-
-  /* Soft god-ray shafts (additive quads) */
-  var rayMat = new THREE.MeshBasicMaterial({
-    color: 0xffd9a0,
-    transparent: true,
-    opacity: 0.07,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  });
-  var ri;
-  for (ri = 0; ri < 5; ri++) {
-    var ray = new THREE.Mesh(new THREE.PlaneGeometry(1.4 + ri * 0.35, 18 + ri * 1.2), rayMat.clone());
-    ray.material.opacity = 0.045 + ri * 0.008;
-    ray.position.set(-1.2 + ri * 0.55, 12, -1.5 + ri * 0.4);
-    ray.rotation.z = -0.18 + ri * 0.05;
-    ray.rotation.y = 0.35;
-    ray.name = "godRay" + ri;
-    group.add(ray);
-  }
-
-  /* Left shadow veil — keeps copy legible over bright cave */
-  var veil = new THREE.Mesh(
-    new THREE.PlaneGeometry(14, 18),
-    new THREE.MeshBasicMaterial({
-      color: 0x1a1410,
-      transparent: true,
-      opacity: 0.55,
-      depthWrite: false,
-      toneMapped: false,
-    })
-  );
-  veil.position.set(-7.5, 4, 2);
-  veil.rotation.y = 0.35;
-  veil.name = "leftCopyVeil";
-  group.add(veil);
-
-  return group;
-}
 
 function makeStudioFloor() {
   /*
-    v0.4.0 cave + pedestal. No black void floor reflection.
-    Pedestal/cave textures loaded sync via TextureLoader (JPG).
+    v0.4.1 hybrid: no 3D cave/god-ray planes. Plate is screen-space behind notebook.
+    Invisible ground only for dissolve wire + optional soft contact (plate already has shadow).
   */
   var group = new THREE.Group();
-  group.name = "cavePedestalWorld";
+  group.name = "hybridPlateWorld";
 
-  var pedMaps = loadPbrMaps(pedestalTexBase, ["albedo", "normal", "roughness", "ao"]);
-  var caveMaps = loadPbrMaps(caveTexBase, ["albedo", "normal", "roughness"]);
-  var pedestal = makePedestal(pedMaps);
-  pedestal.position.set(1.15, 0, -0.35);
-  pedestal.scale.setScalar(1.05);
-  group.add(pedestal);
-
-  var cave = makeCaveShell(caveMaps);
-  group.add(cave);
-
-  /* Warm stone ground under pedestal (no mirror reflection) */
   var ground = new THREE.Mesh(
-    new THREE.CircleGeometry(9, 64),
-    new THREE.MeshStandardMaterial({
-      color: 0xb5a68c,
-      map: pedMaps.albedo || null,
-      roughness: 0.96,
-      metalness: 0,
-    })
-  );
-  if (ground.material.map) ground.material.map.repeat.set(4, 4);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = 0.001;
-  ground.receiveShadow = true;
-  ground.name = "caveGround";
-  group.add(ground);
-
-  /* Contact shadow under notebook — soft disk on pedestal top */
-  var contact = new THREE.Mesh(
-    new THREE.CircleGeometry(1.05, 48),
+    new THREE.PlaneGeometry(40, 40),
     new THREE.MeshBasicMaterial({
-      color: 0x1a120c,
+      color: 0x000000,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0,
       depthWrite: false,
     })
   );
-  contact.rotation.x = -Math.PI / 2;
-  contact.position.set(1.15, pedestal.userData.topY * 1.05 + 0.002, -0.35);
-  contact.name = "pedestalContact";
-  group.add(contact);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.02;
+  ground.visible = false;
+  group.add(ground);
 
-  /* Dissolve wire placeholder (load only) */
   var floorWire = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.CylinderGeometry(1.4, 1.55, 1.1, 12)),
+    new THREE.EdgesGeometry(new THREE.CylinderGeometry(2.2, 2.6, 1.1, 12)),
     new THREE.LineBasicMaterial({
       color: 0xc4b59a,
       transparent: true,
-      opacity: 0.2,
+      opacity: 0.18,
       depthWrite: false,
     })
   );
-  floorWire.position.copy(pedestal.position);
-  floorWire.position.y = 0.55;
+  floorWire.position.set(1.15, 0.55, -0.35);
   floorWire.name = "floorWire";
   group.add(floorWire);
 
@@ -808,14 +622,34 @@ function makeStudioFloor() {
     group: group,
     floorWire: floorWire,
     ground: ground,
-    contact: contact,
+    contact: null,
     glow: null,
     softRefl: null,
-    pedestal: pedestal,
-    cave: cave,
-    pedestalTopY: pedestal.userData.topY * 1.05,
+    plate: null,
+    pedestalTopY: 1.22,
+    pedX: 1.15,
+    pedZ: -0.35,
   };
 }
+
+function makePlateBackdrop(tex) {
+  /* Fullscreen plate — far in camera space so notebook (closer) wins depth */
+  var mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    depthTest: true,
+    depthWrite: true,
+    toneMapped: false,
+    transparent: true,
+    opacity: 0,
+  });
+  var mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -20;
+  mesh.name = "cyclesPlate";
+  mesh.userData.isPlate = true;
+  return mesh;
+}
+
 
 function makeDustTexture() {
   var c = document.createElement("canvas");
@@ -824,7 +658,7 @@ function makeDustTexture() {
   var g = c.getContext("2d");
   var grd = g.createRadialGradient(32, 32, 2, 32, 32, 30);
   grd.addColorStop(0, "rgba(255,255,255,1)");
-  grd.addColorStop(0.35, "rgba(220,230,255,0.55)");
+  grd.addColorStop(0.35, "rgba(255,230,190,0.55)");
   grd.addColorStop(1, "rgba(0,0,0,0)");
   g.fillStyle = grd;
   g.fillRect(0, 0, 64, 64);
@@ -838,17 +672,17 @@ function makeParticles(count) {
   var pos = new Float32Array(count * 3);
   var i;
   for (i = 0; i < count; i++) {
-    /* Warm dust in god-ray cone above pedestal / notebook */
-    pos[i * 3] = 1.15 + (Math.random() - 0.35) * 1.4;
-    pos[i * 3 + 1] = Math.random() * 4.8 + 1.2;
-    pos[i * 3 + 2] = -0.35 + (Math.random() - 0.4) * 1.3;
+    /* Subtle warm mote near pedestal volume — keep clear of left copy / UI */
+    pos[i * 3] = (Math.random() - 0.2) * 0.9;
+    pos[i * 3 + 1] = Math.random() * 1.4 + 0.35;
+    pos[i * 3 + 2] = (Math.random() - 0.35) * 0.85;
   }
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   var mat = new THREE.PointsMaterial({
-    size: 0.032,
+    size: 0.022,
     map: makeDustTexture(),
     transparent: true,
-    opacity: 0.28,
+    opacity: 0.14,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     color: 0xffe2b0,
@@ -984,8 +818,8 @@ function upgradeChassisMaterials(root, figmaTex) {
       var colorMap = shadeKeyAlbedo(m.map || null);
       var roughMap = boostKeyRoughness(m.roughnessMap || null, m.map || colorMap);
       /* Space Gray/Black aluminum — slightly lifted base so soft key reads on palmrest */
-      var baseCol = new THREE.Color(isBase ? 0x0c0e11 : 0x060708);
-      if (isLid) baseCol.set(0x050607);
+      var baseCol = new THREE.Color(isBase ? 0x161a1f : 0x0a0c0e);
+      if (isLid) baseCol.set(0x0a0c0e);
       var phys = new THREE.MeshPhysicalMaterial({
         color: baseCol,
         map: colorMap,
@@ -994,10 +828,10 @@ function upgradeChassisMaterials(root, figmaTex) {
         metalnessMap: null,
         aoMap: m.aoMap || null,
         metalness: isBase ? 0.68 : 0.8,
-        roughness: isBase ? 0.62 : 0.5,
+        roughness: isBase ? 0.55 : 0.48,
         clearcoat: 0.1,
         clearcoatRoughness: 0.68,
-        envMapIntensity: isBase ? 0.22 : 0.16,
+        envMapIntensity: isBase ? 0.35 : 0.22,
         reflectivity: 0.32,
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
@@ -1334,14 +1168,14 @@ async function init() {
   renderer.toneMappingExposure = isMobile ? 1.58 : 1.18;
   renderer.shadowMap.enabled = !state.gpuOffLikely;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.setClearColor(0x2a2218, 1);
+  renderer.setClearColor(0x000000, 1);
 
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x3a3126);
-  scene.fog = new THREE.FogExp2(0x4a3f32, 0.018);
+  scene.background = new THREE.Color(0x000000);
+  scene.fog = new THREE.FogExp2(0x000000, 0.022);
 
   /* ~50–85mm feel */
-  var camera = new THREE.PerspectiveCamera(26, 1, 0.05, 200);
+  var camera = new THREE.PerspectiveCamera((PINNED_FINAL_CAM && PINNED_FINAL_CAM.fov) || 26, 1, 0.05, 200);
   camera.position.set(6.4, 3.8, 7.6);
 
   var pmrem = null;
@@ -1352,12 +1186,12 @@ async function init() {
     pmrem = null;
   }
 
-  var hemi = new THREE.HemisphereLight(0xffe6c4, 0x3a2e22, 0.42);
+  var hemi = new THREE.HemisphereLight(0x8a7a68, 0x1a1410, 0.16);
   scene.add(hemi);
 
-  /* Warm key from cave oculus */
-  var key = new THREE.DirectionalLight(0xffd9a8, 1.35);
-  key.position.set(-2.2, 14.5, -3.5);
+  /* Warm overhead key — keep Space Black (do not wash) */
+  var key = new THREE.DirectionalLight(0xffe2b8, 0.28);
+  key.position.set(-2.0, 12.0, -2.5);
   key.castShadow = !state.gpuOffLikely;
   if (key.castShadow) {
     key.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
@@ -1373,28 +1207,23 @@ async function init() {
   }
   scene.add(key);
 
-  /* Warm rim — Space Black readable against sand/ochre cave */
-  var rim = new THREE.DirectionalLight(0xffe8c8, isMobile ? 2.4 : 2.0);
+  /* Thin cold rim — mid 0.2.4↔0.2.5: readable silhouette, no silver wash */
+  var rim = new THREE.DirectionalLight(0xd8e6ff, isMobile ? 4.1 : 3.4);
   rim.position.set(-6.2, 4.6, -6.2);
   scene.add(rim);
 
-  var rimHinge = new THREE.DirectionalLight(0xf0dcc0, isMobile ? 1.6 : 1.35);
+  var rimHinge = new THREE.DirectionalLight(0xc8d6ea, isMobile ? 2.8 : 2.3);
   rimHinge.position.set(4.2, 1.4, -5.2);
   scene.add(rimHinge);
 
-  var rimLid = new THREE.DirectionalLight(0xfff0d8, isMobile ? 1.7 : 1.45);
+  var rimLid = new THREE.DirectionalLight(0xe8f2ff, isMobile ? 2.6 : 2.15);
   rimLid.position.set(0.5, 5.5, -3.8);
   scene.add(rimLid);
 
   /* Thin rim on base front lip + side — keeps chassis readable in final (same as close) */
-  var rimFront = new THREE.DirectionalLight(0xe8d8c0, isMobile ? 1.4 : 1.15);
+  var rimFront = new THREE.DirectionalLight(0xd4e0f2, isMobile ? 2.2 : 1.85);
   rimFront.position.set(2.4, 0.55, 7.2);
   scene.add(rimFront);
-
-  /* Soft fill from left (copy side stays darker) */
-  var caveFill = new THREE.DirectionalLight(0x8a7a68, 0.35);
-  caveFill.position.set(-8, 3.5, 4);
-  scene.add(caveFill);
 
   /* Soft grazing key on deck — FINAL only (close stays v0.3.3) */
   var deckKey = new THREE.DirectionalLight(0xf4f0e8, 0);
@@ -1428,12 +1257,22 @@ async function init() {
   var studio = makeStudioFloor();
   scene.add(studio.group);
 
-  /* Mobile: fewer motes so keyboard stays clean (desktop count locked) */
-  var particleCount = reduced ? 0 : isMobile ? 14 : state.gpuOffLikely ? 72 : 120;
+  /* Subtle warm dust only — never cross UI panels; no god-ray planes */
+  var particleCount = 0; /* v0.4.1 fix: no 3D dust planes (beige smudges on pedestal) */
   var dust = particleCount > 0 ? makeParticles(particleCount) : null;
   if (dust) {
+    dust.position.set(studio.pedX || 1.15, 1.2, studio.pedZ || -0.35);
+    if (dust.material) {
+      dust.material.color.setHex(0xffe2b0);
+      dust.material.opacity = 0.14;
+      dust.material.size = 0.022;
+    }
     scene.add(dust);
   }
+
+  var plateMesh = null;
+  var plateTex = null;
+  var plateParallax = { x: 0, y: 0 };
 
   var placeholder = makePlaceholderWire();
   scene.add(placeholder);
@@ -1483,30 +1322,52 @@ async function init() {
     });
   }
 
-  /* Cave HDRI — reflections; warm fog/background painted by applyFinalStudioLook */
+  /* Studio HDRI — reflections only (v0.3.4); plate carries cave atmosphere */
   if (pmrem) {
     try {
       var hdrTex = await new RGBELoader(manager).loadAsync(hdriUrl);
       hdrTex.mapping = THREE.EquirectangularReflectionMapping;
       var envRT = pmrem.fromEquirectangular(hdrTex);
       scene.environment = envRT.texture;
-      scene.environmentIntensity = isMobile ? 0.38 : 0.45;
-      scene.background = new THREE.Color(0x3a3126);
+      scene.environmentIntensity = isMobile ? 0.14 : 0.10;
+      scene.background = new THREE.Color(0x000000);
       hdrTex.dispose();
       pmrem.dispose();
-      state.envSource = "polyhaven-cave-wall";
+      state.envSource = "polyhaven-studio-small-08";
     } catch (err) {
       console.warn("hdri-load", err);
       try {
         var envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
         scene.environment = envTex;
-        scene.environmentIntensity = 0.4;
+        scene.environmentIntensity = 0.28;
         pmrem.dispose();
         state.envSource = "room-fallback";
       } catch (err2) {
         setStatus("env-map skipped");
       }
     }
+  }
+
+  /* Cycles plate (cave + pedestal) — WebP then JPG fallback */
+  try {
+    plateTex = await new THREE.TextureLoader(manager).loadAsync(plateUrl);
+  } catch (errPlate) {
+    try {
+      plateTex = await new THREE.TextureLoader(manager).loadAsync(plateUrlJpg);
+    } catch (errPlate2) {
+      console.warn("plate-load", errPlate2);
+      plateTex = null;
+    }
+  }
+  if (plateTex) {
+    plateTex.colorSpace = THREE.SRGBColorSpace;
+    plateTex.anisotropy = 4;
+    plateMesh = makePlateBackdrop(plateTex);
+    /* Parent to camera so plate stays screen-aligned */
+    camera.add(plateMesh);
+    scene.add(camera);
+    studio.plate = plateMesh;
+    state.plateSource = "cycles-cave-pedestal-v041";
   }
 
   var loader = new GLTFLoader(manager);
@@ -1567,6 +1428,24 @@ async function init() {
     }
   });
   upgradeChassisMaterials(root, figma.texture);
+  /* v0.4.1: chassis must stay opaque and draw over plate */
+  root.traverse(function (o) {
+    if (!o.isMesh) return;
+    var n = (o.name || "").toLowerCase();
+    if (n === "base" || n.indexOf("base") >= 0 || n === "hingebar" || n.indexOf("lid") >= 0) {
+      o.renderOrder = 2;
+      o.frustumCulled = false;
+      var mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(function (m) {
+        if (!m) return;
+        m.depthTest = true;
+        m.depthWrite = true;
+        m.transparent = false;
+        m.opacity = 1;
+        m.needsUpdate = true;
+      });
+    }
+  });
   addDarkHingeBar(root);
 
   var matEntries = captureSolidMaterials(root);
@@ -1583,20 +1462,17 @@ async function init() {
   macbook.position.sub(center);
   macbook.position.y += size.y * 0.42;
 
-  /* Seat notebook on carved pedestal (v0.4.0).
-     root.scale = MODEL_SCALE → convert world deltas to local macbook.position. */
-  var pedX = 1.15;
-  var pedZ = -0.35;
-  var pedTop = studio.pedestalTopY || 1.18;
+  /* Seat on Cycles plate pedestal (world→local via MODEL_SCALE) */
+  var pedX = studio.pedX || 1.15;
+  var pedZ = studio.pedZ || -0.35;
+  var pedTop = studio.pedestalTopY || 1.22;
   macbook.position.x += pedX / MODEL_SCALE;
   macbook.position.z += pedZ / MODEL_SCALE;
   box.setFromObject(macbook);
-  macbook.position.y += (pedTop - box.min.y + 0.012) / MODEL_SCALE;
-  if (studio.contact) {
-    studio.contact.position.set(pedX, pedTop + 0.004, pedZ);
-  }
-  if (studio.pedestal) {
-    studio.pedestal.position.set(pedX, 0, pedZ);
+  /* Seat slightly into plate top so Space Black base reads planted (hybrid) */
+  macbook.position.y += (pedTop - box.min.y - 0.025) / MODEL_SCALE;
+  if (studio.floorWire) {
+    studio.floorWire.position.set(pedX, pedTop * 0.5, pedZ);
   }
 
   applyLidPose(bevels, poses, "open");
@@ -1631,6 +1507,13 @@ async function init() {
       deckSpot.target.position.copy(palm);
       deckSpot.position.set(palm.x + 0.15, palm.y + 1.15, palm.z + 1.05);
       deckSpot.target.updateMatrixWorld();
+    }
+    if (studio.softRefl) {
+      studio.softRefl.position.set(
+        palm.x * 0.4,
+        0.0006,
+        aimBox.max.z + 0.35
+      );
     }
   })();
 
@@ -1726,48 +1609,18 @@ async function init() {
       with a tiny pull so front/trackpad lands ~88–90%.
       Mobile: keep upper/mid + copy below.
     */
-    /* Desktop LOCKED v0.3.4: fillH 0.515 / ndcY 0.30 / faceDist×0.92 / right crop */
-    var fillH = isMobile ? 0.30 : 0.515;
+    /* Desktop: +8–12% closer than v033; left edge ~50%; trackpad ~92–95% */
+    var fillH = isMobile ? 0.46 : 0.515;
     faceDist = screenWorldH / (fillH * 2 * Math.tan(vFov / 2));
 
-    var ndcY = isMobile ? -0.02 : 0.30;
+    var ndcY = isMobile ? -0.18 : 0.30;
     var vertShift = ndcY * faceDist * Math.tan(vFov / 2);
 
     if (isMobile) {
-      /*
-        v0.3.5: whole chassis between header (~50px) and info (~725px).
-        Side margins 12–20px; zero text overlap. Camera slightly higher
-        to foreshorten lid height so width+height fit the safe band.
-        Desktop path untouched below.
-      */
-      var chassisBox = new THREE.Box3().setFromObject(macbook);
-      var cSize = new THREE.Vector3();
-      var cCenter = new THREE.Vector3();
-      chassisBox.getSize(cSize);
-      chassisBox.getCenter(cCenter);
-      var aspect = Math.max(0.2, camera.aspect || (390 / 844));
-      var hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
-      /*
-        Proven v0.3.5 mobile fit (whole chassis, sides clear, no text overlap).
-        Width-led; slight extra pullback so bezel/sidebar never kiss the edge.
-        Desktop path untouched below.
-      */
-      var fillW = 0.84;
-      var distW = (cSize.x * 0.5) / (Math.tan(hFov / 2) * fillW);
-      var distH = (cSize.y * 0.5) / (Math.tan(vFov / 2) * 0.66);
-      faceDist = Math.max(distW, distH) * 1.14;
-      camFaceTarget.copy(cCenter).addScaledVector(screenUp, cSize.y * 0.05);
-      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist);
+      /* Larger notebook; tight vertical gaps to header + info */
+      camFaceTarget.copy(center).addScaledVector(screenUp, vertShift * 0.85);
+      camFace.copy(camFaceTarget).addScaledVector(normal, faceDist * 0.9);
       camFace.addScaledVector(screenUp, faceDist * 0.02);
-      if (!state._frozenMobileFace) {
-        state._frozenMobileFace = camFace.clone();
-        state._frozenMobileFaceTarget = camFaceTarget.clone();
-        state._frozenMobileFaceDist = faceDist;
-      } else {
-        camFace.copy(state._frozenMobileFace);
-        camFaceTarget.copy(state._frozenMobileFaceTarget);
-        faceDist = state._frozenMobileFaceDist;
-      }
     } else {
       var leftEdge = new THREE.Vector3()
         .copy(center)
@@ -1781,6 +1634,12 @@ async function init() {
       camFace.addScaledVector(screenUp, faceDist * 0.01);
       camFace.addScaledVector(screenRight, -screenWorldW * 0.28);
       camFaceTarget.addScaledVector(screenRight, -screenWorldW * 0.1);
+      /* Prefer pinned hybrid cam (full chassis on pedestal) */
+      if (PINNED_FINAL_CAM) {
+        camFace.set(PINNED_FINAL_CAM.position[0], PINNED_FINAL_CAM.position[1], PINNED_FINAL_CAM.position[2]);
+        camFaceTarget.set(PINNED_FINAL_CAM.target[0], PINNED_FINAL_CAM.target[1], PINNED_FINAL_CAM.target[2]);
+        faceDist = camFace.distanceTo(camFaceTarget);
+      }
       if (!state.finalCamLocked) {
         state._frozenFace = camFace.clone();
         state._frozenFaceTarget = camFaceTarget.clone();
@@ -1800,28 +1659,45 @@ async function init() {
     camFlash.addScaledVector(screenRight, -screenWorldW * 0.04);
   }
 
+  function updatePlateBackdrop(amount, parallaxAmt) {
+    if (!plateMesh || !plateMesh.material) return;
+    var a = clamp01(amount);
+    var p = clamp01(parallaxAmt == null ? a : parallaxAmt);
+    /* Fit plate plane to vertical FOV at z=-1 in camera space */
+    var vFov = THREE.MathUtils.degToRad(camera.fov);
+    /* Behind notebook (~9u) so chassis wins depth vs plate */
+    var dist = Math.max(faceDist || 9.2, 10.5);
+    var h = 2 * Math.tan(vFov / 2) * dist;
+    var w = h * Math.max(camera.aspect, 0.35);
+    /* Intro: slight overscale (blur feel) → settle 1.0; parallax via offset */
+    var over = 1.0 + (1.0 - a) * 0.06;
+    plateMesh.position.set(plateParallax.x * 0.04 * (1 - p), plateParallax.y * 0.03 * (1 - p), -dist);
+    plateMesh.scale.set(w * over, h * over, 1);
+    plateMesh.material.opacity = a;
+    plateMesh.visible = a > 0.02;
+    /* Clear color under plate during hybrid final */
+    if (a > 0.5) {
+      scene.background = null;
+      renderer.setClearColor(0x2a2218, 1);
+      if (scene.fog) scene.fog.density = 0.002;
+    }
+  }
+
   function applyFinalStudioLook(amount) {
     var a = clamp01(amount);
-    /* Warm cave atmosphere — sand/ochre fog, no black void */
-    scene.background = new THREE.Color(0x3a3126);
-    renderer.setClearColor(0x2a2218, 1);
-    scene.fog = new THREE.FogExp2(0x4a3f32, 0.014 + 0.008 * a);
-    renderer.toneMappingExposure = isMobile ? 1.45 : 1.22 + 0.06 * a;
+    scene.background = new THREE.Color(0x000000);
+    renderer.setClearColor(0x000000, 1);
+    scene.fog = new THREE.FogExp2(0x000000, 0.008 + 0.004 * (1 - a));
     if (studio.group) {
       if (studio.floorWire) studio.floorWire.visible = false;
-      if (studio.ground) studio.ground.visible = true;
-      if (studio.contact) {
-        studio.contact.visible = true;
-        if (studio.contact.material) {
-          studio.contact.material.opacity = 0.38 + 0.08 * a;
-        }
-      }
-      if (studio.cave) studio.cave.visible = true;
-      if (studio.pedestal) studio.pedestal.visible = true;
+      if (studio.ground) studio.ground.visible = false;
     }
+    /* Plate fade in (opening) — sharp at final */
+    updatePlateBackdrop(a, a);
     if (screenOverlay && screenOverlay.material) {
       screenOverlay.material.opacity = Math.max(screenOverlay.material.opacity, 0.001);
     }
+    renderer.toneMappingExposure = isMobile ? 1.45 : 1.12 + 0.04 * a;
   }
 
   /* Start close/low/lateral; camNear = mid for lid; camFace = final */
@@ -2269,16 +2145,16 @@ async function init() {
       (captureMode && state.captureTime >= T_FACE0) ||
       timeline.done;
     if (atFinalLook) {
-      key.intensity = isMobile ? 0.22 : 0.18;
+      key.intensity = isMobile ? 0.16 : 0.12;
       fill.intensity = isMobile ? 0.09 : 0.07;
       rimLid.intensity = bloomFlash > 0.08 ? (isMobile ? 3.0 : 2.6) : (isMobile ? 2.7 : 2.35);
       rim.intensity = bloomFlash > 0.08 ? (isMobile ? 4.2 : 3.7) : (isMobile ? 3.9 : 3.45);
       rimHinge.intensity = bloomFlash > 0.08 ? (isMobile ? 3.0 : 2.6) : (isMobile ? 2.75 : 2.4);
       if (rimFront) rimFront.intensity = bloomFlash > 0.08 ? (isMobile ? 2.3 : 2.0) : (isMobile ? 2.45 : 2.2);
       /* Grazing key + near palm spot: palmrest mean target 25–35/255 (probe) */
-      if (deckKey) deckKey.intensity = bloomFlash > 0.08 ? 0.45 : (isMobile ? 1.55 : 2.15);
-      if (deckFill) deckFill.intensity = bloomFlash > 0.08 ? 0.2 : (isMobile ? 0.48 : 0.72);
-      if (deckSpot) deckSpot.intensity = bloomFlash > 0.08 ? 2.5 : (isMobile ? 18 : 32);
+      if (deckKey) deckKey.intensity = bloomFlash > 0.08 ? 0.28 : (isMobile ? 0.9 : 1.15);
+      if (deckFill) deckFill.intensity = bloomFlash > 0.08 ? 0.12 : (isMobile ? 0.28 : 0.38);
+      if (deckSpot) deckSpot.intensity = bloomFlash > 0.08 ? 1.2 : (isMobile ? 8 : 12);
       if (studio.softRefl && studio.softRefl.material && bloomFlash <= 0.15) {
         studio.softRefl.material.opacity = 0.15;
         studio.softRefl.visible = true;
@@ -2318,6 +2194,8 @@ async function init() {
       camera.position.lerpVectors(camNear, camFace, tfzE);
       var look = new THREE.Vector3().lerpVectors(camTarget, camFaceTarget, tfzE);
       camera.lookAt(look);
+      plateParallax.x = (camNear.x - camFace.x) * (1 - tfzE);
+      plateParallax.y = (camNear.y - camFace.y) * (1 - tfzE);
       applyFinalStudioLook(tfzE);
       setDof(1);
       if (bokehPass && bokehPass.uniforms) {
@@ -2663,55 +2541,98 @@ async function init() {
     return out;
   };
 
-  window.__POYTARA_TRY_FLASH_CAM = function (distMul, elevMul) {
-    state._flashDistMul = Number(distMul) || 3.4;
-    state._flashElevMul = Number(elevMul) || 1.05;
-    var ms = window.__POYTARA_CAPTURE_FLASH_STILL();
-    return { ms: ms, box: state._flashBox, cam: dumpCamera() };
+
+    window.__POYTARA_PROJECT_MESH = function (name) {
+    var mesh = null;
+    root.traverse(function (o) { if (o.isMesh && o.name === name) mesh = o; });
+    if (!mesh) return null;
+    camera.updateMatrixWorld(true);
+    mesh.updateMatrixWorld(true);
+    var box = new THREE.Box3().setFromObject(mesh);
+    var pts = [
+      new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+    ];
+    return pts.map(function (p) {
+      var v = p.clone().project(camera);
+      return { ndc: [v.x, v.y, v.z], inView: v.x>=-1&&v.x<=1&&v.y>=-1&&v.y<=1&&v.z>=-1&&v.z<=1 };
+    });
   };
 
-  window.__POYTARA_CAPTURE_CLOSE_PEDESTAL = function () {
-    /* Desktop QA close: carved pedestal + Space Black notebook (not keyboard-only). */
+window.__POYTARA_PROBE_MESHES = function () {
+    var out = [];
+    root.updateMatrixWorld(true);
+    root.traverse(function (o) {
+      if (!o.isMesh) return;
+      var box = new THREE.Box3().setFromObject(o);
+      var size = box.getSize(new THREE.Vector3());
+      var center = box.getCenter(new THREE.Vector3());
+      var mats = Array.isArray(o.material) ? o.material : [o.material];
+      out.push({
+        name: o.name,
+        visible: o.visible,
+        layers: o.layers.mask,
+        renderOrder: o.renderOrder,
+        center: center.toArray(),
+        size: size.toArray(),
+        mats: mats.map(function (m) {
+          if (!m) return null;
+          return {
+            type: m.type,
+            opacity: m.opacity,
+            transparent: !!m.transparent,
+            wireframe: !!m.wireframe,
+            depthTest: m.depthTest !== false,
+            depthWrite: m.depthWrite !== false,
+            color: m.color ? m.color.getHexString() : null,
+          };
+        }),
+      });
+    });
+    return { count: out.length, meshes: out, cam: camera.position.toArray(), plate: plateMesh ? { opacity: plateMesh.material.opacity, pos: plateMesh.position.toArray(), parent: plateMesh.parent && plateMesh.parent.type } : null };
+  };
+
+window.__POYTARA_CAPTURE_CLOSE_PEDESTAL = function () {
     state.captureTime = 8200;
     applyTimeline(8200);
     applyFinalStudioLook(1);
     applyLidPose(bevels, poses, "open");
     state.lidPose = "open";
     root.updateMatrixWorld(true);
-    if (studio.group) studio.group.updateMatrixWorld(true);
     var boxNb = new THREE.Box3().setFromObject(macbook);
     var nbCenter = boxNb.getCenter(new THREE.Vector3());
     var nbSize = boxNb.getSize(new THREE.Vector3());
-    /* Fixed look: palmrest / hinge on stone — ignore cave AABB */
     var look = new THREE.Vector3(
       nbCenter.x + nbSize.x * 0.05,
       boxNb.min.y + nbSize.y * 0.22,
       nbCenter.z + nbSize.z * 0.08
     );
     var eye = new THREE.Vector3(
-      look.x + Math.max(nbSize.x, 1.2) * 1.35,
-      look.y + Math.max(nbSize.y, 0.8) * 1.05,
-      look.z + Math.max(nbSize.z, 1.0) * 1.55
+      look.x + Math.max(nbSize.x, 1.2) * 1.25,
+      look.y + Math.max(nbSize.y, 0.8) * 0.95,
+      look.z + Math.max(nbSize.z, 1.0) * 1.4
     );
     camera.position.copy(eye);
     camera.lookAt(look);
     state.lockCamera = { pos: eye.clone(), target: look.clone() };
     if (beatCopy) beatCopy.style.opacity = "0";
-    /* Hide left copy veil for product close */
-    if (studio.cave) {
-      studio.cave.traverse(function (o) {
-        if (o.name === "leftCopyVeil") o.visible = false;
-      });
-    }
+    updatePlateBackdrop(1, 1);
     renderFrame();
     dumpCamera();
-    return {
-      look: look.toArray(),
-      eye: eye.toArray(),
-      nbSize: nbSize.toArray(),
-      nbMin: boxNb.min.toArray(),
-      nbMax: boxNb.max.toArray(),
-    };
+    return { look: look.toArray(), eye: eye.toArray(), nbSize: nbSize.toArray() };
+  };
+
+  window.__POYTARA_TRY_FLASH_CAM = function (distMul, elevMul) {
+    state._flashDistMul = Number(distMul) || 3.4;
+    state._flashElevMul = Number(elevMul) || 1.05;
+    var ms = window.__POYTARA_CAPTURE_FLASH_STILL();
+    return { ms: ms, box: state._flashBox, cam: dumpCamera() };
   };
 
 
@@ -2731,12 +2652,12 @@ async function init() {
     build: BUILD,
     mode: "three",
     glb: glbUrl,
-    studio: "cave-pedestal-v040",
+    studio: "hybrid-plate-v041",
     tag: CDN_TAG,
   });
   window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · studio v0.3.1 · stripeFix=" +
+    "ready · studio v0.4.1 hybrid · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
       (state.dofOk ? " · dof" : " · no-dof") +
