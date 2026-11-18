@@ -4,16 +4,18 @@ import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { EffectComposer } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js/+esm";
 import { RenderPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/RenderPass.js/+esm";
 import { BokehPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/BokehPass.js/+esm";
+import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js/+esm";
+import { ShaderPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/ShaderPass.js/+esm";
 import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/OutputPass.js/+esm";
 import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js/+esm";
 
 /*
-  Poytara abertura estúdio v0.2.1 — beats 0–3 + face final (automáticos).
-  Após tampa: dolly/giro para frame frontal (notebook à direita, crop na borda;
-  metade esquerda preta). Info por último. ACES / PMREM. CSP: sem blob/workers/Draco.
+  Poytara abertura estúdio v0.2.1 — face-right + ultra cinema (Apple studio black).
+  Frame final: notebook frontal à direita (crop), metade esquerda preta.
+  Bloom flash na tela, partículas, MeshPhysical, ACES. CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v021-20261117215339";
+var BUILD = "notebook-studio-v021-20261117220210";
 var CDN_TAG = "v0.2.1";
 
 var reduced =
@@ -83,6 +85,7 @@ var TIMING = reduced
 var state = {
   webglOk: false,
   dofOk: false,
+  bloomOk: false,
   postOk: false,
   gpuOffLikely: false,
   still: reduced || mode === "case",
@@ -471,50 +474,56 @@ function bindScreenTexture(root, figma) {
 }
 
 function makeStudioFloor() {
+  /* Deep black vacuum — floor only via reflection glow + contact shadow */
   var group = new THREE.Group();
   group.name = "studioFloor";
 
-  var cyclorama = new THREE.Mesh(
-    new THREE.CylinderGeometry(18, 18, 14, 64, 1, true, 0, Math.PI),
-    new THREE.MeshStandardMaterial({
-      color: 0x12151c,
-      roughness: 0.92,
-      metalness: 0.05,
-      side: THREE.BackSide,
-    })
-  );
-  cyclorama.position.set(0, 5.5, -4);
-  cyclorama.rotation.y = Math.PI;
-  group.add(cyclorama);
-
   var ground = new THREE.Mesh(
-    new THREE.CircleGeometry(16, 64),
-    new THREE.MeshStandardMaterial({
-      color: 0x0e1118,
-      roughness: 0.78,
-      metalness: 0.18,
+    new THREE.CircleGeometry(22, 64),
+    new THREE.MeshPhysicalMaterial({
+      color: 0x000000,
+      roughness: 0.18,
+      metalness: 0.85,
+      clearcoat: 0.4,
+      clearcoatRoughness: 0.35,
+      envMapIntensity: 0.55,
     })
   );
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.01;
+  ground.position.y = -0.012;
   ground.receiveShadow = true;
   group.add(ground);
 
+  var glow = new THREE.Mesh(
+    new THREE.CircleGeometry(3.2, 48),
+    new THREE.MeshBasicMaterial({
+      color: 0x6a7cff,
+      transparent: true,
+      opacity: 0.07,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = 0.001;
+  glow.name = "floorGlow";
+  group.add(glow);
+
   var contact = new THREE.Mesh(
-    new THREE.CircleGeometry(2.4, 48),
-    new THREE.ShadowMaterial({ opacity: 0.42 })
+    new THREE.CircleGeometry(2.6, 48),
+    new THREE.ShadowMaterial({ opacity: 0.55 })
   );
   contact.rotation.x = -Math.PI / 2;
-  contact.position.y = 0.002;
+  contact.position.y = 0.0025;
   contact.receiveShadow = true;
   group.add(contact);
 
   var floorWire = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.CircleGeometry(16, 48)),
+    new THREE.EdgesGeometry(new THREE.CircleGeometry(10, 36)),
     new THREE.LineBasicMaterial({
-      color: 0xb7c4ff,
+      color: 0x9eb6ff,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.22,
     })
   );
   floorWire.rotation.x = -Math.PI / 2;
@@ -522,7 +531,126 @@ function makeStudioFloor() {
   floorWire.name = "floorWire";
   group.add(floorWire);
 
-  return { group: group, floorWire: floorWire, ground: ground, contact: contact };
+  return {
+    group: group,
+    floorWire: floorWire,
+    ground: ground,
+    contact: contact,
+    glow: glow,
+  };
+}
+
+function makeDustTexture() {
+  var c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 64;
+  var g = c.getContext("2d");
+  var grd = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  grd.addColorStop(0, "rgba(255,255,255,1)");
+  grd.addColorStop(0.35, "rgba(220,230,255,0.55)");
+  grd.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  var tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function makeParticles(count) {
+  var geo = new THREE.BufferGeometry();
+  var pos = new Float32Array(count * 3);
+  var i;
+  for (i = 0; i < count; i++) {
+    pos[i * 3] = (Math.random() - 0.35) * 10;
+    pos[i * 3 + 1] = Math.random() * 4.5 + 0.05;
+    pos[i * 3 + 2] = (Math.random() - 0.45) * 8;
+  }
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  var mat = new THREE.PointsMaterial({
+    size: 0.028,
+    map: makeDustTexture(),
+    transparent: true,
+    opacity: 0.42,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    color: 0xd7e4ff,
+    sizeAttenuation: true,
+  });
+  var pts = new THREE.Points(geo, mat);
+  pts.name = "studioDust";
+  pts.frustumCulled = false;
+  return pts;
+}
+
+function upgradeChassisMaterials(root, figmaTex) {
+  root.traverse(function (o) {
+    if (!o.isMesh || !o.material) {
+      return;
+    }
+    if (o.name === "screenOverlay") {
+      return;
+    }
+    var mats = Array.isArray(o.material) ? o.material : [o.material];
+    var next = mats.map(function (m) {
+      if (!m || m.map === figmaTex) {
+        return m;
+      }
+      var n = (o.name || "").toLowerCase();
+      var isKey = n.indexOf("key") >= 0 || n.indexOf("deck") >= 0;
+      var phys = new THREE.MeshPhysicalMaterial({
+        color: m.color ? m.color.clone() : new THREE.Color(0x2c2d32),
+        map: m.map || null,
+        normalMap: m.normalMap || null,
+        roughnessMap: m.roughnessMap || null,
+        metalnessMap: m.metalnessMap || null,
+        metalness: isKey ? 0.18 : 0.96,
+        roughness: isKey ? 0.7 : 0.34,
+        clearcoat: isKey ? 0.08 : 0.62,
+        clearcoatRoughness: isKey ? 0.55 : 0.26,
+        envMapIntensity: isKey ? 0.45 : 1.2,
+        reflectivity: 0.7,
+      });
+      if (m.map) {
+        phys.map.colorSpace = THREE.SRGBColorSpace;
+      }
+      return phys;
+    });
+    o.material = Array.isArray(o.material) ? next : next[0];
+  });
+}
+
+function makeVignetteGrainShader() {
+  return {
+    uniforms: {
+      tDiffuse: { value: null },
+      vignette: { value: 0.85 },
+      grain: { value: 0.035 },
+      time: { value: 0 },
+    },
+    vertexShader: [
+      "varying vec2 vUv;",
+      "void main() {",
+      "  vUv = uv;",
+      "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+      "}",
+    ].join("\n"),
+    fragmentShader: [
+      "uniform sampler2D tDiffuse;",
+      "uniform float vignette;",
+      "uniform float grain;",
+      "uniform float time;",
+      "varying vec2 vUv;",
+      "void main() {",
+      "  vec4 c = texture2D(tDiffuse, vUv);",
+      "  float d = distance(vUv, vec2(0.5));",
+      "  float vig = smoothstep(1.05, 0.28, d * (0.55 + vignette));",
+      "  c.rgb *= vig;",
+      "  float n = fract(sin(dot(vUv * (time + 12.7), vec2(12.9898, 78.233))) * 43758.5453);",
+      "  c.rgb += (n - 0.5) * grain;",
+      "  gl_FragColor = c;",
+      "}",
+    ].join("\n"),
+  };
 }
 
 function makePlaceholderWire() {
@@ -699,16 +827,17 @@ async function init() {
   state.webglOk = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.12;
+  renderer.toneMappingExposure = 1.22;
   renderer.shadowMap.enabled = !state.gpuOffLikely;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.setClearColor(0x07090e, 1);
+  renderer.setClearColor(0x000000, 1);
 
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x07090e);
-  scene.fog = new THREE.FogExp2(0x07090e, 0.028);
+  scene.background = new THREE.Color(0x000000);
+  scene.fog = new THREE.FogExp2(0x000000, 0.034);
 
-  var camera = new THREE.PerspectiveCamera(30, 1, 0.05, 200);
+  /* ~50–85mm feel */
+  var camera = new THREE.PerspectiveCamera(26, 1, 0.05, 200);
   camera.position.set(6.4, 3.8, 7.6);
 
   try {
@@ -716,17 +845,17 @@ async function init() {
     pmrem.compileEquirectangularShader();
     var envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = envTex;
-    scene.environmentIntensity = 0.55;
+    scene.environmentIntensity = 0.42;
     pmrem.dispose();
   } catch (err) {
     setStatus("env-map skipped");
   }
 
-  var hemi = new THREE.HemisphereLight(0x9eb6ff, 0x0a0c12, 0.28);
+  var hemi = new THREE.HemisphereLight(0x6a7a9a, 0x000000, 0.12);
   scene.add(hemi);
 
-  var key = new THREE.DirectionalLight(0xfff2e0, 2.8);
-  key.position.set(5.2, 9.2, 4.2);
+  var key = new THREE.DirectionalLight(0xfff1e0, 0.55);
+  key.position.set(4.2, 7.5, 3.2);
   key.castShadow = !state.gpuOffLikely;
   if (key.castShadow) {
     key.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
@@ -742,16 +871,29 @@ async function init() {
   }
   scene.add(key);
 
-  var rim = new THREE.DirectionalLight(0x9ec5ff, 1.8);
-  rim.position.set(-5.5, 4.5, -6.5);
+  var rim = new THREE.DirectionalLight(0xb7d0ff, 2.4);
+  rim.position.set(-5.8, 3.8, -5.5);
   scene.add(rim);
 
-  var fill = new THREE.DirectionalLight(0x6f87c8, 0.45);
-  fill.position.set(-3.5, 2.2, 5.5);
+  var fill = new THREE.DirectionalLight(0x4a5878, 0.18);
+  fill.position.set(-2.5, 1.8, 5.5);
   scene.add(fill);
+
+  /* Screen bounce onto keyboard (fake RectArea — CSP-safe) */
+  var screenBounce = new THREE.SpotLight(0xdde8ff, 0, 12, Math.PI / 5, 0.55, 1.2);
+  screenBounce.position.set(0, 1.6, 1.1);
+  screenBounce.target.position.set(0, 0.05, 0.2);
+  scene.add(screenBounce);
+  scene.add(screenBounce.target);
 
   var studio = makeStudioFloor();
   scene.add(studio.group);
+
+  var particleCount = reduced ? 0 : isMobile || state.gpuOffLikely ? 160 : 620;
+  var dust = particleCount > 0 ? makeParticles(particleCount) : null;
+  if (dust) {
+    scene.add(dust);
+  }
 
   var placeholder = makePlaceholderWire();
   scene.add(placeholder);
@@ -832,22 +974,9 @@ async function init() {
     if (o.isMesh) {
       o.castShadow = !state.gpuOffLikely;
       o.receiveShadow = !state.gpuOffLikely;
-      if (o.material) {
-        var mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach(function (m) {
-          if (!m) return;
-          if (m.map && m.map !== figma.texture) {
-            m.map.colorSpace = THREE.SRGBColorSpace;
-          }
-          if (m.metalness !== undefined) {
-            m.envMapIntensity = 1.15;
-            m.metalness = Math.min(1, (m.metalness || 0) + 0.08);
-            m.roughness = Math.max(0.18, (m.roughness || 0.45) * 0.92);
-          }
-        });
-      }
     }
   });
+  upgradeChassisMaterials(root, figma.texture);
 
   var matEntries = captureSolidMaterials(root);
   setWireframeMix(matEntries, 1);
@@ -1021,11 +1150,16 @@ async function init() {
 
   var composer = null;
   var bokehPass = null;
+  var bloomPass = null;
+  var vigPass = null;
+  var bloomFlash = 0;
   var useDof =
     !reduced &&
     !isMobile &&
     !state.gpuOffLikely &&
     params.get("dof") !== "0";
+  var useBloom = !reduced && params.get("bloom") !== "0";
+  var usePost = useDof || useBloom;
 
   function resize() {
     var w = canvas.clientWidth || window.innerWidth;
@@ -1043,6 +1177,9 @@ async function init() {
     if (bokehPass && bokehPass.uniforms && bokehPass.uniforms.aspect) {
       bokehPass.uniforms.aspect.value = camera.aspect;
     }
+    if (bloomPass && bloomPass.resolution) {
+      bloomPass.resolution.set(w, h);
+    }
     var lidWas = state.lidPose;
     computeFaceCamera();
     if (lidWas !== "open") {
@@ -1052,24 +1189,45 @@ async function init() {
     }
   }
 
-  if (useDof) {
+  if (usePost) {
     try {
       composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
-      bokehPass = new BokehPass(scene, camera, {
-        focus: nearDist * 0.92,
-        aperture: 0.00022,
-        maxblur: 0.012,
-      });
-      composer.addPass(bokehPass);
+      if (useDof) {
+        bokehPass = new BokehPass(scene, camera, {
+          focus: nearDist * 0.92,
+          aperture: 0.00028,
+          maxblur: 0.014,
+        });
+        composer.addPass(bokehPass);
+        state.dofOk = true;
+      }
+      if (useBloom) {
+        bloomPass = new UnrealBloomPass(
+          new THREE.Vector2(window.innerWidth, window.innerHeight),
+          isMobile || state.gpuOffLikely ? 0.18 : 0.28,
+          0.55,
+          0.82
+        );
+        composer.addPass(bloomPass);
+        state.bloomOk = true;
+      }
+      if (!isMobile && !state.gpuOffLikely) {
+        vigPass = new ShaderPass(makeVignetteGrainShader());
+        vigPass.uniforms.vignette.value = 0.9;
+        vigPass.uniforms.grain.value = 0.028;
+        composer.addPass(vigPass);
+      }
       composer.addPass(new OutputPass());
       state.postOk = true;
-      state.dofOk = true;
     } catch (err) {
       composer = null;
       bokehPass = null;
+      bloomPass = null;
+      vigPass = null;
       state.postOk = false;
       state.dofOk = false;
+      state.bloomOk = false;
     }
   }
 
@@ -1091,6 +1249,7 @@ async function init() {
     assetsReadyAt: 0,
     copyShown: false,
     faceComputed: false,
+    flashed: false,
   };
 
   var T_BEAT0 = TIMING.beat0;
@@ -1143,11 +1302,19 @@ async function init() {
   }
 
   function renderFrame() {
-    if (composer && state.dofOk) {
+    if (bloomPass) {
+      var baseBloom = isMobile || state.gpuOffLikely ? 0.16 : 0.26;
+      bloomPass.strength = baseBloom + bloomFlash * 1.85;
+      bloomPass.threshold = bloomFlash > 0.35 ? 0.55 : 0.8;
+    }
+    if (vigPass && vigPass.uniforms && vigPass.uniforms.time) {
+      vigPass.uniforms.time.value = performance.now() * 0.001;
+    }
+    if (composer && state.postOk) {
       try {
         composer.render();
       } catch (err) {
-        state.dofOk = false;
+        state.postOk = false;
         composer = null;
         renderer.render(scene, camera);
       }
@@ -1261,7 +1428,7 @@ async function init() {
       state.lidPose = "open";
     }
 
-    /* Figma after lid mostly open (before / during face zoom) */
+    /* Figma after lid mostly open + screen flash (wow) */
     if (t >= T_FIG0) {
       document.body.classList.add("is-figma-live");
       var tf = clamp01((t - T_FIG0) / TIMING.figma);
@@ -1270,11 +1437,21 @@ async function init() {
       if (screenOverlay) {
         screenOverlay.material.opacity = timeline.figmaP;
       }
+      if (!timeline.flashed && tf > 0.08 && !reduced) {
+        bloomFlash = 1;
+        timeline.flashed = true;
+      }
+      screenBounce.intensity = 2.8 * timeline.figmaP + bloomFlash * 4.5;
+      if (studio.glow && studio.glow.material) {
+        studio.glow.material.opacity = 0.05 + 0.12 * timeline.figmaP + bloomFlash * 0.18;
+      }
     } else {
       figma.paintFrame(0);
       timeline.figmaP = 0;
       if (screenOverlay) screenOverlay.material.opacity = 0;
+      screenBounce.intensity = 0;
     }
+    bloomFlash *= 0.905;
 
     /* Camera: enter dolly → hold → face+zoom frontal (never scale model) */
     if (t < T_ENTER1) {
@@ -1354,13 +1531,37 @@ async function init() {
   }
 
   function idleDrift(_now) {
-    /* v0.2.1: final frame holds static (no drift) */
+    /* Final frame holds camera static; particles keep living */
     if (!timeline.done) {
       return;
     }
     camera.position.copy(camFace);
     camera.lookAt(camFaceTarget);
     applyFinalStudioLook(1);
+    bloomFlash *= 0.92;
+    screenBounce.intensity = 2.6;
+  }
+
+  function tickDust(now) {
+    if (!dust || reduced) {
+      return;
+    }
+    var arr = dust.geometry.attributes.position.array;
+    var i;
+    var t = now * 0.00012;
+    for (i = 0; i < arr.length; i += 3) {
+      arr[i] += Math.sin(t + i * 0.11) * 0.0012;
+      arr[i + 1] += 0.00055 + Math.cos(t * 0.7 + i) * 0.0004;
+      arr[i + 2] += Math.cos(t + i * 0.07) * 0.0009;
+      if (arr[i + 1] > 5.2) {
+        arr[i + 1] = 0.05;
+      }
+    }
+    dust.geometry.attributes.position.needsUpdate = true;
+    /* Prefer particles in the screen light cone */
+    if (dust.material) {
+      dust.material.opacity = 0.28 + 0.22 * Math.min(1, screenBounce.intensity / 3);
+    }
   }
 
   function frame(now) {
@@ -1378,6 +1579,7 @@ async function init() {
     } else if (!forced && timeline.done) {
       idleDrift(now);
     }
+    tickDust(now);
     renderFrame();
     requestAnimationFrame(frame);
   }
@@ -1403,10 +1605,11 @@ async function init() {
   });
   window.__ecoCaseBuild = BUILD;
   setStatus(
-    "ready · studio v0.2.1 face-right · stripeFix=" +
+    "ready · studio v0.2.1 cinema · stripeFix=" +
       state.stripeFix +
       (state.gpuOffLikely ? " · soft-gpu" : "") +
-      (state.dofOk ? " · dof" : " · no-dof")
+      (state.dofOk ? " · dof" : " · no-dof") +
+      (state.bloomOk ? " · bloom" : " · no-bloom")
   );
 }
 
