@@ -15,7 +15,7 @@ import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exam
   CSP: sem blob/workers/Draco.
 */
 
-var BUILD = "notebook-studio-v022-20261117224705";
+var BUILD = "notebook-studio-v022-20261117225130";
 var CDN_TAG = "v0.2.2";
 
 var reduced =
@@ -525,7 +525,7 @@ function bindScreenTexture(root, figma) {
   var mat = new THREE.MeshBasicMaterial({
     map: figma.texture,
     toneMapped: false,
-    side: THREE.FrontSide,
+    side: THREE.DoubleSide,
     transparent: true,
     opacity: 0,
   });
