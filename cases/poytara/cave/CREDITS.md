@@ -1,6 +1,6 @@
-# CREDITS · Poytara cenário-caverna v0.7.0
+# CREDITS · Poytara cenário-caverna v0.7.2
 
-Só **CC0** Poly Haven. Sem Sketchfab / Fab / Megascans / Igloo / Abeto. Sem assets do notebook / montanha v0.5.0.
+Só **CC0** Poly Haven. Sem Sketchfab / Fab / Megascans / Igloo / Abeto. Sem assets do notebook.
 
 ## HDRI
 
@@ -22,25 +22,26 @@ Só **CC0** Poly Haven. Sem Sketchfab / Fab / Megascans / Igloo / Abeto. Sem ass
 
 | Peça | Origem | Uso |
 |---|---|---|
-| Rock Wall 02 | [polyhaven.com/a/rock_wall_02](https://polyhaven.com/a/rock_wall_02) | Chão + displacement |
-| Dark Rock 02 | [polyhaven.com/a/dark_rock_02](https://polyhaven.com/a/dark_rock_02) | Pedestal + displacement |
+| Rock Wall 02 | [polyhaven.com/a/rock_wall_02](https://polyhaven.com/a/rock_wall_02) | Chão + normal / rough / AO / displace |
+| Dark Rock 02 | [polyhaven.com/a/dark_rock_02](https://polyhaven.com/a/dark_rock_02) | Pedestal + normal / rough / AO / displace |
 
 ## Modelado / realtime (Eco Webdesign)
 
 | Peça | Notas |
 |---|---|
-| Pedestal | Peça única, chanfro suave, weighted normals, displace PH |
-| Fenda + céu emissivo | Boolean no teto; emit ciano |
-| Bake Combined | Floor + pedestal 1024 → emission/basic no GLB |
-| Three.js 0.170 | Facho soft shader, fumaça, poeira, bloom, grain, vinheta, ACES |
+| Pedestal | Peça única, chanfro suave, weighted normals, displace PH 4K |
+| Fenda + céu emissivo | Boolean no teto; emit ciano soft |
+| Bake Combined | Floor + pedestal 1536 @ 128 samples + OIDN → emission/basic no GLB |
+| Three.js 0.170 | Cone soft diagonal + noise, poeira soft, bloom, grain, vinheta, ACES; `.is-three` |
 | Compressão | Draco + KTX2 (publicado); fallback WebP (preview `a=dr`) |
 
 ## Render / engine
 
 | Item | Valor |
 |---|---|
-| Engine still | Blender Cycles 4.5.3 LTS · AgX High Contrast |
+| Engine still / bake | Blender Cycles 4.5.3 LTS · AgX High Contrast · OIDN |
 | Realtime | three@0.170.0 · EffectComposer |
-| Script | `blender/cycles_caverna_v070.py` |
+| Script | `blender/cycles_caverna_v072.py` |
 | Resolução | 1920×1080 |
 | Câmeras | composição central · mais aberto · close (SEM notebook) |
+| Tag CDN | `v0.7.2` |

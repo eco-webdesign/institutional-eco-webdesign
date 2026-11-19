@@ -9,13 +9,14 @@ import { ShaderPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/OutputPass.js/+esm";
 
 /*
-  Poytara caverna v0.7.1 — realtime Igloo-style (SEM notebook / SEM video).
-  Composição v0.6.2. Publicado 792 sem CSP → Draco/KTX2 OK; a=dr → force WebP.
-  Fix: on GLB ready also add .is-three so CSS reveals #pyOpenThree.
+  Poytara caverna v0.7.2 — cinematográfica realtime (SEM notebook / SEM video).
+  Composição v0.6.2. Keep is-three from v0.7.1.
+  Soft diagonal cyan cone + amber pool + fog/bloom/grain/vignette/ACES.
+  No debug HUD unless ?debug=1. No Igloo/Abeto assets.
 */
 
-var BUILD = "cenario-caverna-v071-20261119150600";
-var CDN_TAG = "v0.7.1";
+var BUILD = "cenario-caverna-v072-20261119184000";
+var CDN_TAG = "v0.7.2";
 
 var reduced =
   window.matchMedia &&
@@ -72,7 +73,7 @@ window.__POYTARA_CAVE__ = STATE;
 window.__POYTARA_THREE_PROVA__ = STATE;
 
 function setStatus(msg) {
-  if (statusEl) statusEl.textContent = msg;
+  if (statusEl && debugHud) statusEl.textContent = msg;
 }
 function fail(msg) {
   setStatus(msg);
@@ -98,13 +99,14 @@ function boot() {
       antialias: true,
       powerPreference: "high-performance",
       alpha: false,
+      preserveDrawingBuffer: captureMode,
     });
   } catch (err) {
     fail("WebGL init falhou");
     return;
   }
   STATE.webglOk = true;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, captureMode ? 1 : 1.75));
   renderer.setSize(
     canvas.clientWidth || window.innerWidth,
     canvas.clientHeight || window.innerHeight,
@@ -112,11 +114,13 @@ function boot() {
   );
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
-  renderer.setClearColor(0x0a0e14, 1);
+  renderer.toneMappingExposure = 0.92;
+  /* near-black charcoal — not fake blue void */
+  renderer.setClearColor(0x05070a, 1);
 
   var scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x0b121a, 0.01);
+  scene.background = new THREE.Color(0x05070a);
+  scene.fog = new THREE.FogExp2(0x080c12, 0.014);
 
   var CAMS = {
     comp: { position: [0.15, -6.8, 2.05], target: [0.0, -0.6, 0.783], fov: 43.6 },
@@ -141,33 +145,59 @@ function boot() {
   var lookTarget = camDef.target.clone();
   camera.lookAt(lookTarget);
 
-  scene.add(new THREE.AmbientLight(0x8a9bb0, 0.45));
-  var amber = new THREE.PointLight(0xff7a28, 28, 14, 2);
-  amber.position.set(0, 1.35, 0);
+  /* soft fill — avoid flat 90s lighting */
+  scene.add(new THREE.AmbientLight(0x5a6a7c, 0.28));
+  var hemi = new THREE.HemisphereLight(0x4a6a7a, 0x120e0a, 0.42);
+  scene.add(hemi);
+
+  var amber = new THREE.PointLight(0xff8a3a, 4.2, 9, 2.4);
+  amber.position.set(0.05, 1.05, 0.05);
   scene.add(amber);
-  var cool = new THREE.DirectionalLight(0x6a90b8, 0.55);
+  var amberPool = new THREE.SpotLight(0xff7a28, 9.5, 8, Math.PI / 3.0, 0.95, 1.6);
+  amberPool.position.set(-0.15, 1.9, 0.25);
+  amberPool.target.position.set(0.0, 0.0, 0.0);
+  scene.add(amberPool);
+  scene.add(amberPool.target);
+
+  var cool = new THREE.DirectionalLight(0x6a90b8, 0.38);
   cool.position.set(-5, 6, 3);
   scene.add(cool);
-  var cyanKey = new THREE.SpotLight(0x3ecfff, 90, 36, Math.PI / 9, 0.5, 1);
+
+  var cyanKey = new THREE.SpotLight(0x4ad4ff, 28, 34, Math.PI / 9.5, 0.78, 1.2);
   cyanKey.position.copy(blToThree([0.1, -6.4, 9.6]));
   cyanKey.target.position.copy(blToThree([0, 0, 0.58]));
   scene.add(cyanKey);
   scene.add(cyanKey.target);
 
-  /* Fissure emit */
+  /* visible roof opening — soft emissive disc, not hard rectangle */
   var fissure = new THREE.Mesh(
-    new THREE.PlaneGeometry(5.5, 4.2),
+    new THREE.CircleGeometry(2.4, 48),
     new THREE.MeshBasicMaterial({
-      color: 0x78e8ff,
+      color: 0x8ef0ff,
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.38,
       side: THREE.DoubleSide,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
     })
   );
   fissure.position.copy(blToThree([0.1, -7.0, 10.2]));
   fissure.lookAt(blToThree([0.1, -2.0, 4.0]));
   scene.add(fissure);
+  var fissureHalo = new THREE.Mesh(
+    new THREE.CircleGeometry(3.6, 48),
+    new THREE.MeshBasicMaterial({
+      color: 0x3ecfff,
+      transparent: true,
+      opacity: 0.12,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    })
+  );
+  fissureHalo.position.copy(fissure.position);
+  fissureHalo.quaternion.copy(fissure.quaternion);
+  scene.add(fissureHalo);
 
   var shaft = makeShaft();
   scene.add(shaft.group);
@@ -180,9 +210,9 @@ function boot() {
   composer.addPass(new RenderPass(scene, camera));
   var bloom = new UnrealBloomPass(
     new THREE.Vector2(canvas.clientWidth || 1920, canvas.clientHeight || 1080),
-    0.22,
-    0.5,
-    0.85
+    0.18,
+    0.65,
+    0.78
   );
   composer.addPass(bloom);
   var gradeUniforms = {
@@ -198,15 +228,19 @@ function boot() {
       "float grain(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }",
       "void main(){",
       "  vec4 c = texture2D(tDiffuse, vUv);",
-      "  c.rgb = mix(c.rgb, c.rgb * vec3(0.92, 1.02, 1.08), 0.3);",
-      "  c.rgb = mix(c.rgb, c.rgb * vec3(1.08, 0.95, 0.82), 0.1);",
+      "  /* cyan/amber grade — restrained */",
+      "  c.rgb = mix(c.rgb, c.rgb * vec3(0.88, 1.0, 1.08), 0.22);",
+      "  c.rgb = mix(c.rgb, c.rgb * vec3(1.06, 0.96, 0.86), 0.08);",
+      "  /* soft lift shadows without flattening */",
+      "  c.rgb = max(c.rgb, vec3(0.0));",
+      "  c.rgb = c.rgb / (c.rgb + vec3(1.0)) * 1.12;",
       "  vec2 p = vUv * 2.0 - 1.0;",
-      "  float vig = smoothstep(1.55, 0.35, dot(p,p));",
-      "  c.rgb *= mix(0.6, 1.0, vig);",
-      "  float g = grain(vUv * vec2(1920.0, 1080.0) + uTime) * 0.03;",
-      "  c.rgb += g - 0.015;",
-      "  c.rgb = (c.rgb - 0.5) * 1.06 + 0.5;",
-      "  gl_FragColor = c;",
+      "  float vig = smoothstep(1.65, 0.28, dot(p,p));",
+      "  c.rgb *= mix(0.52, 1.0, vig);",
+      "  float g = grain(vUv * vec2(1920.0, 1080.0) + uTime * 40.0) * 0.028;",
+      "  c.rgb += g - 0.014;",
+      "  c.rgb = (c.rgb - 0.5) * 1.08 + 0.48;",
+      "  gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), 1.0);",
       "}",
     ].join("\n"),
   });
@@ -248,28 +282,30 @@ function boot() {
 
   var mouse = { x: 0, y: 0 };
   var scrollParallax = 0;
-  window.addEventListener(
-    "pointermove",
-    function (e) {
-      var w = window.innerWidth || 1;
-      var h = window.innerHeight || 1;
-      mouse.x = (e.clientX / w) * 2 - 1;
-      mouse.y = (e.clientY / h) * 2 - 1;
-    },
-    { passive: true }
-  );
-  window.addEventListener(
-    "scroll",
-    function () {
-      var y = window.scrollY || window.pageYOffset || 0;
-      scrollParallax = Math.min(1, Math.max(0, y / (window.innerHeight || 800)));
-    },
-    { passive: true }
-  );
+  if (!captureMode) {
+    window.addEventListener(
+      "pointermove",
+      function (e) {
+        var w = window.innerWidth || 1;
+        var h = window.innerHeight || 1;
+        mouse.x = (e.clientX / w) * 2 - 1;
+        mouse.y = (e.clientY / h) * 2 - 1;
+      },
+      { passive: true }
+    );
+    window.addEventListener(
+      "scroll",
+      function () {
+        var y = window.scrollY || window.pageYOffset || 0;
+        scrollParallax = Math.min(1, Math.max(0, y / (window.innerHeight || 800)));
+      },
+      { passive: true }
+    );
+  }
 
   function onResize() {
-    var w = canvas.clientWidth || window.innerWidth;
-    var h = canvas.clientHeight || window.innerHeight;
+    var w = captureMode ? 1920 : canvas.clientWidth || window.innerWidth;
+    var h = captureMode ? 1080 : canvas.clientHeight || window.innerHeight;
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
@@ -297,18 +333,18 @@ function boot() {
   var fpsT = performance.now();
   function frame() {
     var t = clock.getElapsedTime();
-    var breath = reduced ? 0 : Math.sin(t * 0.45) * 0.035;
-    var px = mouse.x * 0.12;
-    var py = mouse.y * 0.08;
-    var sp = scrollParallax * 0.35;
+    var breath = reduced || captureMode ? 0 : Math.sin(t * 0.45) * 0.028;
+    var px = captureMode ? 0 : mouse.x * 0.1;
+    var py = captureMode ? 0 : mouse.y * 0.06;
+    var sp = captureMode ? 0 : scrollParallax * 0.28;
     camera.position.set(
-      camDef.position.x + px + breath * 0.25,
-      camDef.position.y + py * 0.5 + breath,
+      camDef.position.x + px + breath * 0.2,
+      camDef.position.y + py * 0.45 + breath,
       camDef.position.z + sp
     );
     camera.lookAt(
-      lookTarget.x + px * 0.15,
-      lookTarget.y + breath * 0.2,
+      lookTarget.x + px * 0.12,
+      lookTarget.y + breath * 0.15,
       lookTarget.z
     );
 
@@ -316,6 +352,7 @@ function boot() {
     smoke.update(t);
     dust.update(t);
     gradeUniforms.uTime.value = t;
+    amber.intensity = 4.0 + Math.sin(t * 0.55) * 0.3;
     composer.render();
 
     frames++;
@@ -331,18 +368,58 @@ function boot() {
   requestAnimationFrame(frame);
 }
 
-function toBasic(mat) {
-  if (!mat || mat.isMeshBasicMaterial) return mat;
-  var tex = mat.map || mat.emissiveMap || null;
-  if (tex) {
-    var m = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff });
+function toLit(mat) {
+  if (!mat) return new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 0.92 });
+  if (mat.isMeshBasicMaterial && mat.map) {
+    /* baked lightmap stays unlit */
+    var basic = new THREE.MeshBasicMaterial({ map: mat.map, color: 0xffffff });
+    basic.map.colorSpace = THREE.SRGBColorSpace;
+    return basic;
+  }
+  if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
+    mat.metalness = 0.0;
+    mat.roughness = Math.max(0.55, mat.roughness || 0.85);
+    if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+    if (mat.emissiveMap) {
+      /* treat emission bake as basic */
+      var b2 = new THREE.MeshBasicMaterial({ map: mat.emissiveMap, color: 0xffffff });
+      b2.map.colorSpace = THREE.SRGBColorSpace;
+      return b2;
+    }
+    if (mat.emissive && mat.emissive.getHex && mat.map) {
+      var em = mat.emissive.getHex();
+      if (em > 0) {
+        var b3 = new THREE.MeshBasicMaterial({ map: mat.map, color: 0xffffff });
+        b3.map.colorSpace = THREE.SRGBColorSpace;
+        return b3;
+      }
+    }
+    return mat;
+  }
+  if (mat.map || mat.emissiveMap) {
+    var tex = mat.map || mat.emissiveMap;
+    var m = new THREE.MeshStandardMaterial({
+      map: tex,
+      color: 0xffffff,
+      roughness: 0.88,
+      metalness: 0.0,
+      normalMap: mat.normalMap || null,
+      roughnessMap: mat.roughnessMap || null,
+      aoMap: mat.aoMap || null,
+      aoMapIntensity: 0.85,
+    });
     if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
+    if (m.normalMap) m.normalScale = new THREE.Vector2(0.85, 0.85);
     return m;
   }
   if (mat.color) {
-    return new THREE.MeshBasicMaterial({ color: mat.color.clone() });
+    return new THREE.MeshStandardMaterial({
+      color: mat.color.clone().multiplyScalar(0.55),
+      roughness: 0.9,
+      metalness: 0.0,
+    });
   }
-  return new THREE.MeshBasicMaterial({ color: 0x445566 });
+  return new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 0.92 });
 }
 
 function normalizeMaterials(root) {
@@ -350,10 +427,21 @@ function normalizeMaterials(root) {
     if (!o.isMesh) return;
     o.castShadow = false;
     o.receiveShadow = false;
+    var name = (o.name || "") + " " + ((o.material && o.material.name) || "");
+    var baked =
+      /bake|floor|pedestal|combined|FloorBaked|PedestalBaked/i.test(name) ||
+      (o.material && o.material.emissiveMap) ||
+      (o.material && o.material.isMeshBasicMaterial && o.material.map);
     if (Array.isArray(o.material)) {
-      o.material = o.material.map(toBasic);
+      o.material = o.material.map(function (m) {
+        return baked ? toLit(m) : toLit(m);
+      });
     } else {
-      o.material = toBasic(o.material);
+      o.material = toLit(o.material);
+    }
+    /* pull back overbright baked maps */
+    if (o.material && o.material.isMeshBasicMaterial && o.material.map) {
+      o.material.color.setRGB(0.62, 0.66, 0.7);
     }
   });
 }
@@ -361,13 +449,13 @@ function normalizeMaterials(root) {
 function addLitePlaceholder(root) {
   var floor = new THREE.Mesh(
     new THREE.CircleGeometry(14, 48),
-    new THREE.MeshBasicMaterial({ color: 0x1a1f28 })
+    new THREE.MeshStandardMaterial({ color: 0x12161c, roughness: 0.95 })
   );
   floor.rotation.x = -Math.PI / 2;
   root.add(floor);
   var ped = new THREE.Mesh(
     new THREE.CylinderGeometry(1.12, 1.14, 0.58, 48),
-    new THREE.MeshBasicMaterial({ color: 0x2a3038 })
+    new THREE.MeshStandardMaterial({ color: 0x1c222a, roughness: 0.9 })
   );
   ped.position.y = 0.29;
   root.add(ped);
@@ -465,8 +553,8 @@ function makeShaft() {
   var group = new THREE.Group();
   var uniforms = {
     uTime: { value: 0 },
-    uColor: { value: new THREE.Color(0x3ecfff) },
-    uOpacity: { value: 0.42 },
+    uColor: { value: new THREE.Color(0x4ad8ff) },
+    uOpacity: { value: 0.48 },
   };
   var mat = new THREE.ShaderMaterial({
     uniforms: uniforms,
@@ -474,33 +562,74 @@ function makeShaft() {
     depthWrite: false,
     side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
-    vertexShader:
-      "varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
-    fragmentShader: [
-      "varying vec2 vUv; uniform float uTime; uniform vec3 uColor; uniform float uOpacity;",
+    vertexShader: [
+      "varying vec2 vUv;",
+      "varying vec3 vNormal;",
+      "varying vec3 vView;",
       "void main(){",
-      "  float soft = smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.8, vUv.x);",
-      "  float along = pow(1.0 - vUv.y, 1.3);",
-      "  float noise = sin(vUv.y * 16.0 + uTime * 0.35) * 0.04;",
-      "  float a = soft * along * (0.75 + noise) * uOpacity;",
-      "  gl_FragColor = vec4(uColor, a);",
+      "  vUv = uv;",
+      "  vec4 mv = modelViewMatrix * vec4(position,1.0);",
+      "  vNormal = normalize(normalMatrix * normal);",
+      "  vView = normalize(-mv.xyz);",
+      "  gl_Position = projectionMatrix * mv;",
+      "}",
+    ].join("\n"),
+    fragmentShader: [
+      "varying vec2 vUv; varying vec3 vNormal; varying vec3 vView;",
+      "uniform float uTime; uniform vec3 uColor; uniform float uOpacity;",
+      "float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }",
+      "float noise(vec2 p){",
+      "  vec2 i = floor(p); vec2 f = fract(p);",
+      "  float a = hash(i); float b = hash(i + vec2(1.0,0.0));",
+      "  float c = hash(i + vec2(0.0,1.0)); float d = hash(i + vec2(1.0,1.0));",
+      "  vec2 u = f*f*(3.0-2.0*f);",
+      "  return mix(a,b,u.x) + (c-a)*u.y*(1.0-u.x) + (d-b)*u.x*u.y;",
+      "}",
+      "void main(){",
+      "  /* cylinder UV: x around, y along — soft rim via fresnel, soft density along */",
+      "  float fres = pow(1.0 - abs(dot(normalize(vNormal), normalize(vView))), 1.6);",
+      "  float along = pow(1.0 - vUv.y, 1.05) * smoothstep(0.0, 0.08, vUv.y);",
+      "  float n = noise(vec2(vUv.x * 3.5, vUv.y * 8.0 - uTime * 0.15));",
+      "  float n2 = noise(vec2(vUv.x * 9.0 + uTime * 0.04, vUv.y * 16.0));",
+      "  float dens = along * (0.35 + 0.65 * fres) * (0.78 + 0.22 * n) * (0.9 + 0.12 * n2);",
+      "  float a = dens * uOpacity;",
+      "  vec3 col = uColor * (0.75 + 0.35 * dens);",
+      "  gl_FragColor = vec4(col, a);",
       "}",
     ].join("\n"),
   });
+  /* tapered cone: tip near pedestal, wide at roof opening — diagonal */
   var mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.0, 0.2, 12.0, 32, 1, true),
+    new THREE.CylinderGeometry(2.45, 0.16, 12.6, 64, 32, true),
     mat
   );
-  var top = blToThree([0.1, -6.4, 9.6]);
-  var tip = blToThree([0.0, 0.0, 0.58]);
+  var top = blToThree([0.15, -6.55, 9.7]);
+  var tip = blToThree([0.05, 0.05, 0.62]);
   mesh.position.copy(top).add(tip).multiplyScalar(0.5);
   mesh.lookAt(tip);
   mesh.rotateX(Math.PI / 2);
   group.add(mesh);
+
+  /* secondary softer shell */
+  var mat2 = mat.clone();
+  mat2.uniforms = {
+    uTime: uniforms.uTime,
+    uColor: { value: new THREE.Color(0x6ae4ff) },
+    uOpacity: { value: 0.2 },
+  };
+  var shell = new THREE.Mesh(
+    new THREE.CylinderGeometry(3.05, 0.32, 12.4, 48, 20, true),
+    mat2
+  );
+  shell.position.copy(mesh.position);
+  shell.quaternion.copy(mesh.quaternion);
+  group.add(shell);
+
   return {
     group: group,
     update: function (t) {
       uniforms.uTime.value = t;
+      mat2.uniforms.uTime.value = t;
     },
   };
 }
@@ -508,10 +637,10 @@ function makeShaft() {
 function makeSmoke() {
   var group = new THREE.Group();
   var mats = [];
-  for (var i = 0; i < 8; i++) {
+  for (var i = 0; i < 6; i++) {
     var uniforms = {
       uTime: { value: 0 },
-      uSeed: { value: i * 17.13 },
+      uSeed: { value: i * 19.17 },
       uColor: { value: new THREE.Color(0x7ad8ef) },
     };
     var mat = new THREE.ShaderMaterial({
@@ -527,16 +656,16 @@ function makeSmoke() {
         "void main(){",
         "  vec2 uv = vUv * 2.0 - 1.0;",
         "  float d = length(uv);",
-        "  float wisp = smoothstep(1.0, 0.2, d);",
-        "  float f = n(uv * 3.0 + uTime * 0.05 + uSeed);",
-        "  float a = wisp * (0.04 + 0.035 * f);",
+        "  float wisp = smoothstep(1.0, 0.15, d);",
+        "  float f = n(uv * 2.5 + uTime * 0.04 + uSeed);",
+        "  float a = wisp * (0.028 + 0.025 * f);",
         "  gl_FragColor = vec4(uColor, a);",
         "}",
       ].join("\n"),
     });
     mats.push(mat);
-    var spr = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), mat);
-    var tt = i / 8;
+    var spr = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.8), mat);
+    var tt = i / 6;
     spr.position.copy(blToThree([0.05, -6.0 + tt * 5.5, 9.2 - tt * 7.8]));
     group.add(spr);
   }
@@ -549,17 +678,18 @@ function makeSmoke() {
 }
 
 function makeDust() {
-  var count = 700;
+  /* soft glowing sprites — avoid hard square dots */
+  var count = 220;
   var positions = new Float32Array(count * 3);
   var phases = new Float32Array(count);
   for (var i = 0; i < count; i++) {
     var t = Math.random();
-    var r = Math.random() * (0.15 + t * 1.5);
+    var r = Math.random() * (0.12 + t * 1.35);
     var ang = Math.random() * Math.PI * 2;
     var along = blToThree([
-      0.05 + Math.cos(ang) * r * 0.15,
-      -6.2 + t * 5.8,
-      9.4 - t * 8.2,
+      0.05 + Math.cos(ang) * r * 0.18,
+      -6.15 + t * 5.7,
+      9.35 - t * 8.0,
     ]);
     positions[i * 3] = along.x;
     positions[i * 3 + 1] = along.y;
@@ -568,14 +698,29 @@ function makeDust() {
   }
   var geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+  var dustCanvas = document.createElement("canvas");
+  dustCanvas.width = 64;
+  dustCanvas.height = 64;
+  var ctx = dustCanvas.getContext("2d");
+  var grd = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, "rgba(220,245,255,1)");
+  grd.addColorStop(0.35, "rgba(170,230,255,0.55)");
+  grd.addColorStop(1, "rgba(100,200,255,0)");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, 64, 64);
+  var dustTex = new THREE.CanvasTexture(dustCanvas);
+
   var mat = new THREE.PointsMaterial({
-    color: 0xb8f3ff,
-    size: 0.04,
+    color: 0xc8f2ff,
+    map: dustTex,
+    size: 0.14,
     transparent: true,
-    opacity: 0.7,
+    opacity: 0.38,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     sizeAttenuation: true,
+    alphaTest: 0.02,
   });
   var points = new THREE.Points(geo, mat);
   return {
@@ -584,11 +729,11 @@ function makeDust() {
       var pos = geo.attributes.position.array;
       for (var i = 0; i < count; i++) {
         var ph = phases[i];
-        pos[i * 3 + 1] += Math.sin(t * 0.4 + ph) * 0.0008;
-        pos[i * 3] += Math.cos(t * 0.25 + ph) * 0.0005;
+        pos[i * 3 + 1] += Math.sin(t * 0.35 + ph) * 0.0004;
+        pos[i * 3] += Math.cos(t * 0.22 + ph) * 0.00025;
       }
       geo.attributes.position.needsUpdate = true;
-      mat.opacity = 0.5 + 0.25 * Math.sin(t * 0.7);
+      mat.opacity = 0.3 + 0.12 * Math.sin(t * 0.55);
     },
   };
 }

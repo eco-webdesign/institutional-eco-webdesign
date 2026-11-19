@@ -1,16 +1,13 @@
 # Peso runtime pack (cdn-pack/cases/poytara/cave)
 
-  0.017 MB  scene.mjs
- 15.688 MB  cave-draco.ktx2.glb
-  3.974 MB  cave-webp.glb
-  1.565 MB  cave-lite.glb
-  0.001 MB  cameras.json
-  0.002 MB  CREDITS.md
- 21.248 MB  TOTAL (listado)
+   0.023 MB  scene.mjs
+  14.177 MB  cave-draco.ktx2.glb
+   5.683 MB  cave-webp.glb
+   1.579 MB  cave-lite.glb
+   0.001 MB  cameras.json
+  21.462 MB  TOTAL (listado)
 
-# FPS
-headless swiftshader (capture probe): 15 fps
-state.fps during run: 3
-Nota: FPS headless soft-GPU NÃO representa desktop; cena leve (~4–16 MB) tende a 45–60+ em GPU real.
-loadMs: 330
-draco/ktx2/webp: True/False/True
+# Runtime tipico publicado: KTX2+scene ≈ 14.20 MB
+# FPS headless swiftshader (capture probe): 2
+Nota: FPS headless soft-GPU NÃO representa desktop; expectativa 45–60+ em GPU real.
+loadMs: 554  draco/ktx2/webp: True/False/True
