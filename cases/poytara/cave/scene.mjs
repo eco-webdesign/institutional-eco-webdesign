@@ -9,12 +9,13 @@ import { ShaderPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/OutputPass.js/+esm";
 
 /*
-  Poytara caverna v0.7.0 — realtime Igloo-style (SEM notebook / SEM video).
+  Poytara caverna v0.7.1 — realtime Igloo-style (SEM notebook / SEM video).
   Composição v0.6.2. Publicado 792 sem CSP → Draco/KTX2 OK; a=dr → force WebP.
+  Fix: on GLB ready also add .is-three so CSS reveals #pyOpenThree.
 */
 
-var BUILD = "cenario-caverna-v070-20261119151000";
-var CDN_TAG = "v0.7.0";
+var BUILD = "cenario-caverna-v071-20261119150600";
+var CDN_TAG = "v0.7.1";
 
 var reduced =
   window.matchMedia &&
@@ -235,6 +236,7 @@ function boot() {
       if (openRoot) {
         openRoot.classList.remove("is-intro");
         openRoot.classList.add("is-ready");
+        openRoot.classList.add("is-three");
       }
       document.body.classList.add("is-ready");
     })
